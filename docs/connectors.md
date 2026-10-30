@@ -14,6 +14,17 @@ The source adapters live in `apps/api/src/sources/web-events/` and
 `apps/api/src/sources/ics/`. They normalize upstream data into the public
 resource schemas in `packages/contracts/src/resources/`.
 
+## How event pages are read
+
+The events adapter applies the same rules to every institution's pages. It
+looks for `<article>` elements first, then elements whose `class` contains
+`event`, then plain links. Each entry needs a title (`data-event-title`, the
+first `h2`, `h3`, or link text), a public link (`data-event-url` or the first
+`href`), and a date: a `datetime="…"` attribute, such as on `<time>`, or a
+`dd.mm.yyyy` date with an optional `hh:mm` time, read in the pack's time zone.
+Entries without a date are skipped. Each page contributes at most 8 events, and
+`/events` returns the events of all pages together.
+
 ## When a source fails
 
 - Fetches have bounded timeouts, and failures are logged with request context.
@@ -26,10 +37,15 @@ resource schemas in `packages/contracts/src/resources/`.
   source-label fallback records with `_degraded: true`. If every configured
   schedule source fails, the API returns a sanitized error.
 - ICS recurrence expansion is bounded by `RRULE_EXPANSION_HORIZON_DAYS`.
+- `/schedule` returns at most 1000 occurrences across all feeds. When the feeds
+  together hold more, upcoming occurrences are kept first, so a query for a
+  past range can miss occurrences; `_total` counts the retained occurrences
+  that match the query.
 
-Tests set `PUBLIC_EVENTS_MODE=mock` to derive deterministic event records from
-the configured source labels without fetching them, and `PUBLIC_EVENTS_DATE` to
-fix the event and Today clock. Do not set either value in production: live
+Tests and offline local runs set `PUBLIC_EVENTS_MODE=mock` to derive
+deterministic event and schedule records from the configured source labels
+without fetching them, and `PUBLIC_EVENTS_DATE` to fix the event, schedule, and
+Today clock. Do not set either value in production: live
 behavior uses the default `auto` mode and the real clock.
 
 ## Add a public source

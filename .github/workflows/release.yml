@@ -106,7 +106,6 @@ jobs:
       contents: read
       packages: write
     env:
-      IMAGE: ghcr.io/sebastianspicker/concourse/bff
       VERSION: ${{ needs.validate.outputs.version }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -129,6 +128,9 @@ jobs:
           PRERELEASE: ${{ needs.validate.outputs.prerelease }}
         run: |
           set -euo pipefail
+          # GHCR names must be lowercase; docs/release.md documents ghcr.io/<owner>/<repo>/bff.
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}/bff"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
           tags="$IMAGE:$VERSION"
           if [[ "$PRERELEASE" != "true" ]]; then
             tags+=$'\n'"$IMAGE:latest"
@@ -174,11 +176,11 @@ jobs:
         env:
           IMAGE_RESULT: ${{ needs.build-bff-docker.result }}
           RELEASE_RESULT: ${{ needs.create-release.result }}
-          IMAGE: ghcr.io/sebastianspicker/concourse/bff
           TAG: ${{ github.ref_name }}
           VALIDATE_RESULT: ${{ needs.validate.result }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}/bff"
           {
             echo "## Release workflow result"
             echo ""

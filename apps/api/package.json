@@ -3,13 +3,13 @@
   "private": true,
   "version": "1.2.0-alpha.1",
   "scripts": {
-    "build": "node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/clean-package-dist.mjs && tsc6 -p tsconfig.build.json",
     "predev": "pnpm --filter @concourse/contracts build && pnpm --filter @concourse/institutions build",
     "dev": "tsx watch --env-file=.env src/server.ts",
     "dev:once": "tsx --env-file=.env src/server.ts",
     "start": "node dist/server.js",
     "lint": "eslint src --ext .ts",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc6 -p tsconfig.json",
     "test": "vitest run"
   },
   "dependencies": {

@@ -4,14 +4,14 @@
   "version": "1.2.0-alpha.1",
   "main": "index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc6 -p tsconfig.build.json",
     "dev": "npx expo start --dev-client",
     "start": "npx expo start",
     "build:preview": "npx --yes eas-cli@20.5.1 build --profile preview",
     "build:production": "npx --yes eas-cli@20.5.1 build --profile production",
     "lint": "eslint app src config --ext .js,.ts,.tsx",
-    "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc -p tsconfig.json"
+    "test": "vitest run",
+    "typecheck": "tsc6 -p tsconfig.json"
   },
   "dependencies": {
     "@babel/runtime": "7.28.6",

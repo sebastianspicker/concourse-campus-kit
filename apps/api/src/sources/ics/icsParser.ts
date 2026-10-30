@@ -81,6 +81,17 @@ const insertRelevantEvent = (events: ParsedIcsEvent[], event: ParsedIcsEvent, ma
   if (events.length > maxTotal) events.pop();
 }
 
+const compareChronologically = (first: ParsedIcsEvent, second: ParsedIcsEvent): number => {
+  return first.startsAt.localeCompare(second.startsAt) || first.id.localeCompare(second.id);
+}
+
+/** Keeps the most relevant events (upcoming first) up to maxTotal, in chronological order. */
+export function retainRelevantEvents(events: ParsedIcsEvent[], maxTotal: number, referenceDate = new Date()): ParsedIcsEvent[] {
+  const retained: ParsedIcsEvent[] = [];
+  events.forEach((event) => insertRelevantEvent(retained, event, maxTotal, referenceDate.getTime()));
+  return retained.sort(compareChronologically);
+}
+
 export interface ParseIcsOptions { rruleHorizonDays?: number; rruleMaxInstances?: number; maxTotalEvents?: number; referenceDate?: Date; }
 
 type ParseContext = {
@@ -144,7 +155,7 @@ export function parseIcs(ics: string, options?: ParseIcsOptions): ParsedIcsEvent
   const context = parseContext(options, countDocumentRecurringEvents(ics, limits));
   const events: ParsedIcsEvent[] = [];
   forEachValidIcsEvent(ics, (event) => appendEvent(events, event.current, event.exdates, context));
-  return events.sort((first, second) => first.startsAt.localeCompare(second.startsAt) || first.id.localeCompare(second.id));
+  return events.sort(compareChronologically);
 }
 
 /** Decodes ICS text escapes after structural parsing has separated property values. */

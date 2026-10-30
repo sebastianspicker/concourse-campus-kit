@@ -11,10 +11,10 @@
     }
   },
   "scripts": {
-    "build": "node ../../scripts/clean-package-dist.mjs && tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/clean-package-dist.mjs && tsc6 -p tsconfig.build.json",
     "lint": "eslint src --ext .ts",
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "typecheck": "tsc6 -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
     "@concourse/contracts": "workspace:*",

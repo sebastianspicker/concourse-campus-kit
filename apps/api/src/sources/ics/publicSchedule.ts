@@ -1,15 +1,16 @@
 /** Fetches, parses, caches, and degrades gracefully for public schedule sources. */
 
+import { createHash } from "node:crypto";
 import type { InstitutionPack } from "@concourse/institutions";
-import { isPublicHttpUrl, type ScheduleItem } from "@concourse/contracts";
+import { isPublicHttpUrl, SCHEDULE_RESPONSE_MAX_ITEMS, type ScheduleItem } from "@concourse/contracts";
 import { log } from "../../runtime/logger";
 import { getCached } from "../upstream/cache";
 import { getPublicSourceBreaker } from "../upstream/circuitBreaker";
 import { fetchTextWithTimeout } from "../upstream/httpClient";
-import { parseIcs, type ParsedIcsEvent } from "./icsParser";
+import { parseIcs, retainRelevantEvents, type ParsedIcsEvent } from "./icsParser";
 
 export type FetchPublicScheduleResult = { schedule: ScheduleItem[]; degraded: boolean };
-export type PublicScheduleOptions = { cacheTtlMs: number; rruleHorizonDays: number };
+export type PublicScheduleOptions = { cacheTtlMs: number; rruleHorizonDays: number; mode?: string; date?: Date };
 type ScheduleSource = { url: string; label: string };
 type SettledScheduleSource = PromiseSettledResult<ParsedIcsEvent[]>;
 
@@ -25,6 +26,16 @@ function toScheduleItem(p: ParsedIcsEvent): ScheduleItem {
   };
 }
 
+/** Mock mode is deterministic and offline: one item per configured source, at the mock date, with a stable ID. */
+function sourceLabelSchedule(sources: ScheduleSource[], date: Date): ScheduleItem[] {
+  const startsAt = date.toISOString();
+  return sources.map((source) => ({
+    id: `mock_${createHash("sha256").update(JSON.stringify([source.url, source.label])).digest("hex").slice(0, 24)}`,
+    title: source.label,
+    startsAt
+  }));
+}
+
 /** Fetches and parses one source through its source-scoped circuit breaker. */
 async function loadScheduleSource(source: ScheduleSource, signal: AbortSignal, rruleHorizonDays: number): Promise<ParsedIcsEvent[]> {
   const text = await getPublicSourceBreaker("public-schedule", source.url).call(
@@ -34,8 +45,8 @@ async function loadScheduleSource(source: ScheduleSource, signal: AbortSignal, r
 }
 
 /** Logs a failed source and returns no events so successful sources remain usable. */
-function scheduleItemsFromSettledSource(source: ScheduleSource, result: SettledScheduleSource): ScheduleItem[] {
-  if (result.status === "fulfilled") return result.value.map(toScheduleItem);
+function eventsFromSettledSource(source: ScheduleSource, result: SettledScheduleSource): ParsedIcsEvent[] {
+  if (result.status === "fulfilled") return result.value;
 
   log("warn", "public_schedule_source_failed", {
     source: source.label,
@@ -44,15 +55,19 @@ function scheduleItemsFromSettledSource(source: ScheduleSource, result: SettledS
   return [];
 }
 
-/** Combines settled sources in configured order and retains partial-data degradation. */
+/**
+ * Combines settled sources chronologically within the wire limit, keeping
+ * upcoming occurrences first, and retains partial-data degradation.
+ */
 function combineScheduleSources(
   sources: ScheduleSource[],
   settledSources: SettledScheduleSource[],
   hasRejectedSource: boolean
 ): FetchPublicScheduleResult {
-  const schedule = settledSources.flatMap((result, index) =>
-    scheduleItemsFromSettledSource(sources[index], result)
+  const events = settledSources.flatMap((result, index) =>
+    eventsFromSettledSource(sources[index], result)
   );
+  const schedule = retainRelevantEvents(events, SCHEDULE_RESPONSE_MAX_ITEMS).map(toScheduleItem);
   const degraded = hasRejectedSource || settledSources.some((result) => result.status === "rejected");
   return { schedule, degraded };
 }
@@ -88,6 +103,9 @@ export async function fetchPublicSchedule(
   const hasRejectedSource = sources.length !== configuredSources.length;
   const cacheKey = `public-schedule:${institution.id}`;
   const ttlMs = options.cacheTtlMs;
+  if (options.mode === "mock") {
+    return { schedule: sourceLabelSchedule(sources, options.date ?? new Date()), degraded: hasRejectedSource };
+  }
   const loader = (signal: AbortSignal) => loadScheduleSources(sources, signal, hasRejectedSource, options.rruleHorizonDays);
 
   return getCached(

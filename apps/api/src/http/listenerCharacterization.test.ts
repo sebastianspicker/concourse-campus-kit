@@ -61,6 +61,15 @@ describe("listener rate limiting", () => {
     expect(limited.headers["cache-control"]).toBe("no-store");
   });
 
+  it("applies the configured request limit and window", async () => {
+    const app = await createApp({ BFF_RATE_LIMIT_MAX: "3", BFF_RATE_LIMIT_WINDOW_SECONDS: "10" });
+    for (let i = 0; i < 3; i += 1) await request(app).get("/health").expect(200);
+    const limited = await request(app).get("/health").expect(429);
+
+    expect(Number(limited.headers["retry-after"])).toBeGreaterThanOrEqual(1);
+    expect(Number(limited.headers["retry-after"])).toBeLessThanOrEqual(10);
+  });
+
   it("throttles repeated invalid credentials in a separate bucket and still admits valid ones", async () => {
     const app = await createApp({ BFF_REQUIRE_AUTH: "true", BFF_AUTH_TOKEN: "secret-token" });
     for (let i = 0; i < 60; i += 1) {

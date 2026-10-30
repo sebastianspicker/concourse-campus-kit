@@ -29,6 +29,8 @@ HTTPS tunnel or a locally trusted HTTPS proxy for physical-device development.
 | `CORS_ORIGINS` | Optional comma-separated origins; none are allowed by default. |
 | `BFF_DEFAULT_CACHE_TTL` | Integer 1–86400 seconds; default 300. |
 | `RRULE_EXPANSION_HORIZON_DAYS` | Integer 1–366 days; default 90. |
+| `BFF_RATE_LIMIT_MAX` | Integer 1–100000 requests per client per window; default 60. Failed bearer-token attempts keep a separate fixed bucket of 60 per minute. |
+| `BFF_RATE_LIMIT_WINDOW_SECONDS` | Integer 1–3600 seconds; default 60. |
 | `BFF_REQUIRE_AUTH` / `BFF_AUTH_TOKEN` | Optional bearer guard and its required secret. |
 | `BFF_TRUSTED_PROXIES` | Optional exact IP/CIDR allowlist for forwarded identity. |
 | `BFF_TRUST_PROXY` | `never` by default; accepts `never` or `always`. |
@@ -42,9 +44,11 @@ unsupported recurrence and the base event remains available without expansion.
 it. `always` trusts client-supplied forwarding headers and is only appropriate
 behind an isolated edge that replaces them.
 
-`PUBLIC_EVENTS_MODE` and `PUBLIC_EVENTS_DATE` are deterministic test controls.
-API tests default the mode to `mock`. Leave both unset in production so event
-sources use `auto` mode and the real clock.
+`PUBLIC_EVENTS_MODE` and `PUBLIC_EVENTS_DATE` are deterministic test and
+local-development controls. `PUBLIC_EVENTS_MODE=mock` serves events and schedule
+items derived from the pack's source labels without fetching them, and marks
+responses with `x-data-mode: mock`; API tests and the README's local run use it.
+Leave both unset in production so sources use `auto` mode and the real clock.
 
 | Client variable | Behavior |
 |---|---|
@@ -146,7 +150,7 @@ example `docker stop --time 15` or Compose `stop_grace_period: 15s`.
 | Institution mismatch | Use the same `INSTITUTION_ID` in the API and client configuration. |
 | Route returns 404 | Check that the selected pack has the corresponding public sources or rooms. |
 | Data is degraded | Inspect API logs and fetch the configured public source from the API host. |
-| Shared client rate-limit bucket | Use exact `BFF_TRUSTED_PROXIES`; avoid `always` on exposed APIs. |
+| Shared client rate-limit bucket | Use exact `BFF_TRUSTED_PROXIES`; avoid `always` on exposed APIs. If many clients must share one address, raise `BFF_RATE_LIMIT_MAX`. |
 | Frozen install fails | Run `pnpm install` only after an intentional dependency change, and review the lockfile. |
 
 Use `x-request-id` to connect client-visible failures with structured API logs.

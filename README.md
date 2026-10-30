@@ -93,9 +93,13 @@ browser, simulator, emulator, or device can reach. Then start each side in its
 own terminal:
 
 ~~~bash
-INSTITUTION_ID=example pnpm --filter @concourse/api dev
+INSTITUTION_ID=example PUBLIC_EVENTS_MODE=mock pnpm --filter @concourse/api dev
 INSTITUTION_ID=example pnpm --filter @concourse/client start
 ~~~
+
+The `example` pack points at placeholder URLs, so the API command uses mock
+mode: events and schedule items are derived offline from the pack's source
+labels. Drop `PUBLIC_EVENTS_MODE=mock` for a pack with real public sources.
 
 Use `pnpm --filter @concourse/client dev` only with a compatible development
 client. On a physical device, expose the API over HTTPS or a locally trusted

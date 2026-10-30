@@ -18,7 +18,9 @@ describe("BFF configuration defaults", () => {
       trustProxy: "never",
       trustedProxies: [],
       defaultCacheTtl: 300,
-      rruleExpansionHorizonDays: 90
+      rruleExpansionHorizonDays: 90,
+      rateLimitMax: 60,
+      rateLimitWindowSeconds: 60
     });
   });
 
@@ -58,6 +60,15 @@ describe("BFF numeric bounds", () => {
     expect(() => load({ RRULE_EXPANSION_HORIZON_DAYS: "0" })).toThrow("RRULE_EXPANSION_HORIZON_DAYS must be between 1 and 366");
     expect(() => load({ RRULE_EXPANSION_HORIZON_DAYS: "367" })).toThrow("RRULE_EXPANSION_HORIZON_DAYS must be between 1 and 366");
     expect(() => load({ RRULE_EXPANSION_HORIZON_DAYS: "1.5" })).toThrow("RRULE_EXPANSION_HORIZON_DAYS must be an integer");
+  });
+
+  it("reads and bounds the per-client rate limit", () => {
+    expect(load({ BFF_RATE_LIMIT_MAX: "600", BFF_RATE_LIMIT_WINDOW_SECONDS: "30" })).toMatchObject({ rateLimitMax: 600, rateLimitWindowSeconds: 30 });
+    expect(() => load({ BFF_RATE_LIMIT_MAX: "0" })).toThrow("BFF_RATE_LIMIT_MAX must be between 1 and 100000");
+    expect(() => load({ BFF_RATE_LIMIT_MAX: "100001" })).toThrow("BFF_RATE_LIMIT_MAX must be between 1 and 100000");
+    expect(() => load({ BFF_RATE_LIMIT_WINDOW_SECONDS: "0" })).toThrow("BFF_RATE_LIMIT_WINDOW_SECONDS must be between 1 and 3600");
+    expect(() => load({ BFF_RATE_LIMIT_WINDOW_SECONDS: "3601" })).toThrow("BFF_RATE_LIMIT_WINDOW_SECONDS must be between 1 and 3600");
+    expect(() => load({ BFF_RATE_LIMIT_MAX: "ten" })).toThrow("BFF_RATE_LIMIT_MAX must be an integer");
   });
 });
 

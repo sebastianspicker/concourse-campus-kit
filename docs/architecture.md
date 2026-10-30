@@ -95,8 +95,10 @@ rules:
 1. A client public-data hook builds a route and query from the constants and
    types in `@concourse/contracts`.
 2. The client transport resolves the configured BFF origin, bounds the request,
-   retries eligible failures, and checks a returned `x-institution-id` against
-   the client build.
+   retries eligible failures within a 12-second budget, and checks a returned
+   `x-institution-id` against the client build. A `Retry-After` wait that does
+   not fit the budget ends the request with the rate-limit or server error, so
+   saved data or the matching message is shown instead of a timeout.
 3. The API listener assigns `x-request-id`, applies CORS and security headers,
    handles `OPTIONS`, then enforces optional bearer auth, rate limits, and the
    `GET`-only route contract.

@@ -18,6 +18,8 @@ export type BffConfig = {
   trustedProxyMatcher: TrustedProxyMatcher;
   defaultCacheTtl: number;
   rruleExpansionHorizonDays: number;
+  rateLimitMax: number;
+  rateLimitWindowSeconds: number;
   authRequirement: AuthRequirement;
   authToken: string | undefined;
   appVersion: string;
@@ -127,6 +129,8 @@ export function loadConfig(env: Env): BffConfig {
     trustedProxyMatcher: createTrustedProxyMatcher(trustedProxies),
     defaultCacheTtl: parseIntInRange(env.BFF_DEFAULT_CACHE_TTL ?? "300", "BFF_DEFAULT_CACHE_TTL", 1, 86_400),
     rruleExpansionHorizonDays: parseIntInRange(env.RRULE_EXPANSION_HORIZON_DAYS ?? "90", "RRULE_EXPANSION_HORIZON_DAYS", 1, 366),
+    rateLimitMax: parseIntInRange(env.BFF_RATE_LIMIT_MAX ?? "60", "BFF_RATE_LIMIT_MAX", 1, 100_000),
+    rateLimitWindowSeconds: parseIntInRange(env.BFF_RATE_LIMIT_WINDOW_SECONDS ?? "60", "BFF_RATE_LIMIT_WINDOW_SECONDS", 1, 3_600),
     authRequirement: parseAuthRequirement(env.BFF_REQUIRE_AUTH),
     authToken: env.BFF_AUTH_TOKEN?.trim() || undefined,
     appVersion: env.APP_VERSION ?? env.npm_package_version ?? "development",

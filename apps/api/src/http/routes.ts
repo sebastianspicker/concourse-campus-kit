@@ -118,7 +118,7 @@ function createPublicDataSources(config: BffConfig): PublicDataSources {
   const cacheTtlMs = config.defaultCacheTtl * 1000;
   return {
     fetchEvents: (institution) => fetchPublicEvents(institution, { cacheTtlMs, mode: config.publicEventsMode, date: config.publicEventsDate }),
-    fetchSchedule: (institution) => fetchPublicSchedule(institution, { cacheTtlMs, rruleHorizonDays: config.rruleExpansionHorizonDays })
+    fetchSchedule: (institution) => fetchPublicSchedule(institution, { cacheTtlMs, rruleHorizonDays: config.rruleExpansionHorizonDays, mode: config.publicEventsMode, date: config.publicEventsDate })
   };
 }
 

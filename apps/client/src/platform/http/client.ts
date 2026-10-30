@@ -7,6 +7,12 @@ import { fetchJsonResponseWithTimeout } from "./fetchHelpers";
 import { ApiErrorException } from "./errors";
 import { withRetry } from "./retry";
 
+// Attempts, waits, and retries together finish within this budget, below the
+// 15 s cache-coordinator deadline, so the real failure (rate limit, server
+// error, timeout) reaches the saved-data fallback and the UI.
+const REQUEST_BUDGET_MS = 12_000;
+const ATTEMPT_TIMEOUT_MS = 10_000;
+
 export type ApiJsonResult<T> = {
   data: T;
   institutionId: string | null;
@@ -45,9 +51,10 @@ export async function getJsonResult<T>(
   options?: { signal?: AbortSignal }
 ): Promise<ApiJsonResult<T>> {
   const url = createBffRequestUrl(path);
+  const deadline = Date.now() + REQUEST_BUDGET_MS;
   const response = await withRetry(
-    () => fetchJsonResponseWithTimeout<unknown>(url, { signal: options?.signal }),
-    { signal: options?.signal }
+    () => fetchJsonResponseWithTimeout<unknown>(url, { signal: options?.signal }, Math.max(1, Math.min(ATTEMPT_TIMEOUT_MS, deadline - Date.now()))),
+    { signal: options?.signal, deadline }
   );
   const institutionId = getResponseInstitutionId(response);
 

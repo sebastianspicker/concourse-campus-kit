@@ -6,9 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 node scripts/verify-public-tree.mjs
-if [[ -d scripts/__tests__ ]]; then
-  pnpm test:tools
-fi
+pnpm test:tools
 pnpm check:architecture
 
 if [[ "${SKIP_INSTALL:-}" != "1" ]]; then

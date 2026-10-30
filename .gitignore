@@ -160,18 +160,5 @@ GEMINI.md
 /REMEDIATION.md
 /REMEDIATION_PLAN.md
 
-# Internal test directories (not published)
-/apps/client/src/data/public/__tests__/
-/apps/client/src/design-system/__tests__/
-/apps/client/src/platform/env/__tests__/
-/packages/contracts/src/__tests__/
-/packages/institutions/src/__tests__/
-/scripts/__tests__/
-/apps/client/src/features/events/__tests__/
-/apps/client/src/features/rooms/__tests__/
-/apps/client/src/features/today/__tests__/
-/apps/client/src/localization/__tests__/
-/apps/client/src/platform/http/__tests__/
-
 # Private design notes (not published)
 /DESIGN_BRIEF.md

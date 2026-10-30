@@ -29,7 +29,7 @@
     "build:demo": "pnpm --filter @concourse/contracts build && pnpm --filter @concourse/institutions build && CONCOURSE_STATIC_DEMO=1 INSTITUTION_ID=example pnpm --filter @concourse/client exec expo export --platform web --output-dir ../../dist-pages --clear && node scripts/prepare-pages-output.mjs",
     "dev": "turbo run dev --parallel",
     "lint": "eslint apps/api/vitest.config.ts apps/client/vitest.config.ts apps/client/app.config.ts playwright.config.mjs apps/client/e2e-web --ext .mjs && turbo run lint",
-    "typecheck": "tsc -p tsconfig.tools.json && turbo run typecheck",
+    "typecheck": "tsc6 -p tsconfig.tools.json && turbo run typecheck",
     "test": "turbo run test",
     "check:architecture": "node scripts/check-architecture.mjs",
     "verify:demo:artifact": "node scripts/verify-pages-output.mjs",

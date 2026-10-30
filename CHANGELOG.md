@@ -45,6 +45,33 @@ matching tag workflow creates the GitHub prerelease and the versioned BFF image.
   after hydration.
 - The static demo's Today schedule follows the current campus day instead of a
   fixed past date.
+- The client, contracts, institutions, and tooling test suites are tracked and
+  run in CI and `pnpm verify`; an empty suite now fails instead of passing.
+- Builds and type checks use the workspace TypeScript compiler (`tsc6`)
+  instead of whatever global `tsc` the machine has, so the BFF container
+  image builds again.
+- Event pages of every institution are parsed for dates (`datetime`
+  attributes and `dd.mm.yyyy` dates), not only HfMT pages; entries without a
+  date are skipped instead of appearing as 1 January 1970, so Today and Events
+  work for institutions other than HfMT.
+- `/events` returns the events of all configured pages instead of at most 8
+  in total.
+- `/schedule` no longer fails with a server error when several ICS feeds
+  together hold more than 1000 occurrences; it keeps the 1000 most relevant
+  (upcoming first) in chronological order.
+- The API's per-client request limit is configurable with
+  `BFF_RATE_LIMIT_MAX` and `BFF_RATE_LIMIT_WINDOW_SECONDS` (defaults unchanged:
+  60 requests per 60 seconds), so testers behind one proxy need not share a
+  60-per-minute budget.
+- When the API is rate limited or slow, the app shows saved data or the
+  rate-limit message instead of "took too long": retries finish within a
+  12-second budget and a long `Retry-After` is not waited out.
+- `PUBLIC_EVENTS_MODE=mock` also covers `/schedule`, and the README's local run
+  uses it, so the documented `example` setup works offline instead of
+  returning placeholder events and a schedule error.
+- Release builds now publish the API image as `ghcr.io/<owner>/<repo>/bff`,
+  derived from the repository, as `docs/release.md` documents; the workflow
+  previously pushed the pre-rename `ghcr.io/sebastianspicker/concourse/bff`.
 
 ---
 

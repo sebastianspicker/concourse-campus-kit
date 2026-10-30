@@ -109,9 +109,18 @@ function canRetry(error: unknown, attempt: number, retries: number): boolean {
   return attempt <= retries && shouldRetry(error);
 }
 
+// Time a retried attempt needs after its wait to be worth starting.
+const MIN_ATTEMPT_AFTER_WAIT_MS = 2_000;
+
+/** Waits for the next attempt, or fails now with the real error when the wait would leave no room for it before the caller's deadline. */
+async function waitForRetry(error: unknown, delayMs: number, signal: AbortSignal | undefined, deadline: number | undefined): Promise<void> {
+  if (deadline !== undefined && Date.now() + delayMs + MIN_ATTEMPT_AFTER_WAIT_MS >= deadline) throw error;
+  await sleep(delayMs, signal);
+}
+
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  options?: { retries?: number; baseDelayMs?: number; multiplier?: number; maxDelayMs?: number; signal?: AbortSignal }
+  options?: { retries?: number; baseDelayMs?: number; multiplier?: number; maxDelayMs?: number; signal?: AbortSignal; deadline?: number }
 ): Promise<T> {
   const retries = options?.retries ?? 2;
   const baseDelayMs = options?.baseDelayMs ?? 250;
@@ -142,6 +151,6 @@ export async function withRetry<T>(
     }
 
     const delay = getRetryDelayMs(result.error, baseDelayMs, attempt, multiplier, maxDelayMs);
-    await sleep(delay, signal);
+    await waitForRetry(result.error, delay, signal, options?.deadline);
   }
 }

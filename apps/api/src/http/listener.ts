@@ -120,7 +120,7 @@ function guardRequestAccess(context: ListenerContext, scope: RequestScope, path:
     if (!authRate.allowed) { handleRateLimitExceeded(scope, path, authRate.retryAfter); return false; }
   }
   if (!guardAuth(req, res, config)) { log("info", "auth_required", { requestId, method: req.method, path }); return false; }
-  const requestRate = limiter.check(`request:${clientKey}`);
+  const requestRate = limiter.check(`request:${clientKey}`, { limit: config.rateLimitMax, windowMs: config.rateLimitWindowSeconds * 1000 });
   if (!requestRate.allowed) { handleRateLimitExceeded(scope, path, requestRate.retryAfter); return false; }
   if (!guardMethods(req, res, ALLOWED_METHODS)) { log("info", "method_not_allowed", { requestId, method: req.method, path }); return false; }
   return true;
