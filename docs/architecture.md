@@ -192,7 +192,7 @@ client builds, signing, store submission, hosted infrastructure, and target
 device validation belong to the adopting institution and are outside the local
 source gate.
 
-The tag workflow validates release metadata and source, builds and smoke-tests
+The manually dispatched release workflow validates an existing tag, metadata and source, builds and smoke-tests
 the API image, publishes versioned GHCR tags, and creates a GitHub Release in
 separate jobs. Publication is therefore not atomic.
 

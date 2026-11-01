@@ -6,6 +6,21 @@ Concourse turns a university's public events pages, calendar feeds, and room
 lists into one calm, accessible campus app: a Node.js backend-for-frontend (BFF)
 and an Expo Router client for iOS, Android, and the web.
 
+<details>
+<summary>Status and limitations</summary>
+
+Concourse is an independent experimental project for presenting public university events,
+calendars and rooms. Developed independently alongside my main professional work. This alpha
+source candidate is a starting point for an institution-specific campus application, not a
+ready-to-use university service. The demos use fixtures; deployment, institutional
+configuration, mobile signing and device validation require separate work. An adopting
+institution is responsible for reviewing and adapting the source, checking data sources and
+accessibility, and operating and securing its deployment. Displayed public information can
+change, so important scheduling or room decisions should be checked against the original
+university source.
+
+</details>
+
 This repository is an alpha source candidate. A checkout is not a published
 release, a hosted API, or a signed store build.
 
@@ -18,8 +33,9 @@ release, a hosted API, or a signed store build.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Both demos use the fictional `example` institution pack and local fixtures. They
-never call the API, campus services, or the network, so you can explore them
-offline.
+do not query the BFF or campus services and need no live institutional data.
+The web page and its static assets must still be served by a host or local
+preview server.
 
 ## Screenshot tour
 
@@ -63,6 +79,14 @@ separate, reviewed implementation.
 | `apps/api` | Public-data BFF, source adapters, cache, and HTTP security controls | Independently run Node.js service and release container | [API guide](apps/api/README.md) |
 | `apps/client` | Expo Router application, design system, transport, and persisted cache | Independently run native/web application; owner-managed EAS builds | [Client guide](apps/client/README.md) |
 | `infra`, `scripts` | Development container, setup, verification, demo, and release tooling | Repository support tooling | [Runbook](docs/runbook.md) |
+
+~~~mermaid
+flowchart LR
+  Sources[Public event pages and calendar feeds] --> API[Node.js BFF: fetch, validate and cache]
+  Packs[Institution pack: public settings and rooms] --> API
+  API --> Client[Expo app: current data or disclosed saved fallback]
+  Fixtures[Local fixtures] --> Demo[Static demo: no BFF requests]
+~~~
 
 The client only ever talks to the BFF over HTTP; it never imports API source.
 The full dependency graph lives in [Architecture](docs/architecture.md).

@@ -31,12 +31,12 @@
     "react-native": "0.86.0",
     "react-native-safe-area-context": "5.7.0",
     "react-native-web": "0.21.2",
-    "zod": "3.25.76"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@react-native/babel-preset": "0.86.0",
     "@types/react": "19.2.17",
     "vite": "6.4.3",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   }
 }

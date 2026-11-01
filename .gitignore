@@ -162,3 +162,18 @@ GEMINI.md
 
 # Private design notes (not published)
 /DESIGN_BRIEF.md
+
+# Local audit and agent deliverables
+/ALPHA_AUDIT_REPORT.md
+/ALPHA_PR_DESCRIPTION.md
+/*_LEDGER.md
+/*-LEDGER.md
+
+# Private local investigations and ad hoc checks
+.private/
+/private/
+/local-tests/
+/scratch/
+
+# Opt-in local performance investigation, excluded from CI correctness gates
+/apps/client/e2e-web/today-benchmark.spec.mjs

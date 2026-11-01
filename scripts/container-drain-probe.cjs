@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const http = require("node:http");
 const { once } = require("node:events");
 const { createServerLifecycle, installShutdownSignalHandlers, SERVER_SHUTDOWN_TIMEOUT_MS } = require(`${process.cwd()}/dist/server.js`);
-const { getCached, destroyCache } = require(`${process.cwd()}/dist/runtime/cache.js`);
+const { getCached, destroyCache } = require(`${process.cwd()}/dist/sources/upstream/cache.js`);
 
 async function probe() {
   assert.equal(SERVER_SHUTDOWN_TIMEOUT_MS, 10_000);

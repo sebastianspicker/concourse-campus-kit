@@ -106,3 +106,16 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Local audit/agent material must not enter image contexts
+ALPHA_AUDIT_REPORT.md
+ALPHA_PR_DESCRIPTION.md
+*_LEDGER.md
+*-LEDGER.md
+
+.private
+private
+local-tests
+scratch
+
+apps/client/e2e-web/today-benchmark.spec.mjs

@@ -2,14 +2,18 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to validate and publish
+        required: true
+        type: string
 
 permissions: {}
 
 jobs:
   validate:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     name: Validate Release
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -23,14 +27,18 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag }}
           persist-credentials: false
 
       - name: Verify tag commit belongs to the default branch
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          TAG_NAME: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"
+          git show-ref --verify --quiet "refs/tags/$TAG_NAME"
+          test "$(git rev-parse "refs/tags/${TAG_NAME}^{commit}")" = "$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "HEAD" "origin/$DEFAULT_BRANCH"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -45,7 +53,7 @@ jobs:
       - name: Validate tag, versions, and changelog
         id: metadata
         env:
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           version="${TAG_NAME#v}"
@@ -57,9 +65,11 @@ jobs:
             prerelease=false
             channel=stable
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+            echo "channel=$channel"
+          } >> "$GITHUB_OUTPUT"
 
       - run: pnpm install --frozen-lockfile
 
@@ -67,6 +77,7 @@ jobs:
         run: SKIP_INSTALL=1 ./scripts/verify-production-ready.sh
 
   create-release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     name: Create GitHub Release
     needs: [validate, build-bff-docker]
     runs-on: ubuntu-latest
@@ -77,6 +88,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag }}
           persist-credentials: false
 
       - name: Generate release notes
@@ -91,6 +103,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
+          tag_name: ${{ inputs.tag }}
           body_path: release-notes.md
           draft: false
           generate_release_notes: false
@@ -98,6 +111,7 @@ jobs:
           prerelease: ${{ needs.validate.outputs.prerelease == 'true' }}
 
   build-bff-docker:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     name: Build and Verify BFF Image
     needs: validate
     runs-on: ubuntu-latest
@@ -111,6 +125,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
+          ref: ${{ inputs.tag }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -167,7 +182,7 @@ jobs:
   notify:
     name: Release Summary
     needs: [validate, create-release, build-bff-docker]
-    if: always()
+    if: always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -176,7 +191,7 @@ jobs:
         env:
           IMAGE_RESULT: ${{ needs.build-bff-docker.result }}
           RELEASE_RESULT: ${{ needs.create-release.result }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag }}
           VALIDATE_RESULT: ${{ needs.validate.result }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |

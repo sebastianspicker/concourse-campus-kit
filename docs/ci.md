@@ -1,18 +1,18 @@
 # Continuous integration
 
-GitHub Actions is the source of truth for merge safety. It checks every change,
-scans dependencies and secrets, and publishes the demo and release artifacts.
+GitHub Actions automatically checks Dependabot pull requests and runs security
+scans. Other source checks and all publication require manual dispatch.
 
 ## Workflows
 
 | Workflow | Runs on | What it does |
 |---|---|---|
-| `ci` | pushes to `main`/`dev`, pull requests | Installs with the frozen lockfile and runs `scripts/verify-production-ready.sh`: tooling tests, a batched public-tree scan, architecture checks, and fresh package builds. The `web` and `containers` jobs must also pass before merge. |
-| `dependency-review` | pull requests | Scans `pnpm-lock.yaml` with OSV. |
-| `gitleaks` | pull requests, pushes to `main`/`dev` | Scans for committed secrets. |
-| `codeql` | pull requests, pushes to `main`/`dev`, weekly | Runs CodeQL analysis. |
-| `pages` | pushes to `main`, manual dispatch | Builds the fixture-only static demo and its design preview, then deploys the verified artifact. |
-| `release` | `v*` tags | Checks metadata and the source gate, verifies the `apps/api` image, pushes it to GHCR, and creates the GitHub Release. |
+| `ci` | Dependabot-authored pull requests, manual dispatch | Installs with the frozen lockfile and runs `scripts/verify-production-ready.sh`: tooling tests, a batched public-tree scan, architecture checks, and fresh package builds. The `web` and `containers` jobs must also pass before merge. |
+| `dependency-review` | pull requests | Uses GitHub dependency review to reject introduced vulnerabilities, including low severity. |
+| `gitleaks` | pull requests, pushes to `main`/`dev`, manual dispatch | Scans for committed secrets. |
+| `codeql` | pull requests, pushes to `main`/`dev`, weekly, manual dispatch | Runs CodeQL analysis. |
+| `pages` | manual dispatch from `main` only | Builds the fixture-only static demo and its design preview, then deploys the verified artifact. |
+| `release` | manual dispatch from `main`, with an existing version tag | Checks metadata and the source gate, verifies the `apps/api` image, pushes it to GHCR, and creates the GitHub Release. |
 
 The release workflow runs its image and release jobs separately, so publication
 is not atomic. After a failed run, check GHCR and GitHub Releases independently.
@@ -35,9 +35,16 @@ already ran.
 Docker publication, Pages deployment, EAS, and native accessibility checks all
 happen outside it.
 
+The lockfile includes a narrow Metro patch in `patches/`: Metro reads image
+assets as bytes before passing them to image-size 2. Both container builders
+copy that patch before the frozen install. Keep the patch and lockfile aligned
+when updating Metro, and verify real asset exports with `pnpm verify:web`.
+
 ## Policy
 
-Public pull-request workflows need no secrets. Keep privileged jobs on trusted
+Non-Dependabot pull requests do not run the general build jobs or deploy anything.
+Security scans still examine all pull requests. Dependency updates are scheduled
+weekly for npm workspaces, GitHub Actions and API Docker base images. Public pull-request workflows need no secrets. Keep privileged jobs on trusted
 branches or manual dispatch, pin tools and actions, and install with the frozen
 lockfile. `CODEOWNERS` protects the workflow, security, release, container,
 contract, and institution-pack surfaces.
