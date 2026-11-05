@@ -1,5 +1,5 @@
 # Development-tagged BFF image built from a complete production dependency deploy.
-FROM node:22.13.0-alpine AS builder
+FROM node:26.13.0-alpine AS builder
 
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
@@ -26,7 +26,7 @@ RUN pnpm --filter @concourse/contracts build && \
     pnpm --filter @concourse/api build && \
     pnpm --filter @concourse/api deploy --prod /app
 
-FROM node:22.13.0-alpine AS runner
+FROM node:26.13.0-alpine AS runner
 
 ARG APP_VERSION=development
 
