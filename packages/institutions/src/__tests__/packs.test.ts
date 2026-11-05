@@ -14,6 +14,7 @@ describe("@concourse/institutions", () => {
       name: "Example University",
       type: "music-and-dance",
       campuses: [],
+      timezone: "Europe/Berlin",
       publicSources: { events: [], schedules: [] }
     })).not.toThrow();
     expect(() => InstitutionPackSchema.parse({
@@ -23,6 +24,12 @@ describe("@concourse/institutions", () => {
       campuses: [],
       timezone: "not-a-timezone"
     })).toThrow();
+    expect(() => InstitutionPackSchema.parse({
+      id: "hfmt",
+      name: "Example University",
+      type: "music-and-dance",
+      campuses: []
+    })).toThrow();
   });
 
   it("accepts public HTTP(S) event and calendar source URLs", () => {
@@ -31,6 +38,7 @@ describe("@concourse/institutions", () => {
       name: "Example University",
       type: "music-and-dance",
       campuses: [],
+      timezone: "Europe/Berlin",
       publicSources: {
         events: [{ label: "Events", url: "https://www.example.org/events" }],
         schedules: [{ label: "Calendar", url: "https://www.example.org/calendar.ics" }]

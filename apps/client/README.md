@@ -44,14 +44,14 @@ pnpm --filter @concourse/client typecheck
 
 ## Saved data
 
-Concurrent loads for the same query share one request, including forced
+Concurrent loads for the same query share one request, including a
 refresh. Cancelling one view leaves other consumers running. Valid network data
 appears without waiting for storage, and saving is best effort. The versioned
 public cache keeps up to 50 query entries for 24 hours, with a 4 MiB UTF-8
 total and a 1 MiB per-entry limit. Expired entries are evicted first, then the
 oldest writes.
 
-Clearing saved data removes the public memory and persisted caches but keeps
+Clearing saved data removes the persisted public cache and the detail cache but keeps
 already-visible information, language, and appearance. It cancels pending loads
 without fetching a replacement. Later navigation, refresh, reconnect, or an
 eligible foreground or focus transition can save data again. See the

@@ -18,7 +18,8 @@ timezone, and client presentation defaults for one institution. Packs live in
 - `id`, `name`, `type`, and `campuses`
 - optional `publicRooms`
 - optional `publicSources.events` and `publicSources.schedules`
-- optional IANA `timezone`
+- a required IANA `timezone`; the API and the client read every source time and
+  the campus day in this zone
 - optional `app.displayName`, `app.defaultLocale`, `app.designPreset`, and an
   accessible `app.accent`: a six-digit hex color used as a flat fill. It needs
   4.5:1 against black or white text and must stand out from every light preset

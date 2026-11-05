@@ -35,6 +35,23 @@ matching tag workflow creates the GitHub prerelease and the versioned BFF image.
   open", and Next shows the nearest entry that has not started, regardless of
   sort order. While the schedule loads or fails, the board says so.
 - The campus clock and Now/Next update every minute.
+- Institution packs must set an IANA `timezone` (breaking for packs that
+  omitted it). The API previously fell back to Europe/Berlin and the client to
+  UTC, so such packs showed times one or two hours off.
+- The API refuses to start when `BFF_TRUST_PROXY` and `BFF_TRUSTED_PROXIES` are
+  both set; an explicit mode used to disable the allowlist silently. An empty
+  `BFF_TRUST_PROXY=` counts as unset. The API `.env.example` no longer sets
+  `BFF_TRUST_PROXY`.
+- Invalid `from`, `to`, and `offset` query values return `400 bad_request`
+  instead of being ignored.
+- The rate limit counts IPv6 clients per /64, so rotating addresses inside one
+  allocation no longer resets the limit. Size `BFF_RATE_LIMIT_MAX` for networks
+  where many clients share one /64.
+- `/health` no longer reports a heap-ratio memory warning; it returns `ok` (200)
+  or `error` (503).
+- Degraded event and schedule results stay in the API source cache for up to
+  60 seconds, so one broken source no longer triggers an upstream fetch on
+  nearly every request.
 
 ### Fixed
 
@@ -72,6 +89,20 @@ matching tag workflow creates the GitHub prerelease and the versioned BFF image.
 - Release builds now publish the API image as `ghcr.io/<owner>/<repo>/bff`,
   derived from the repository, as `docs/release.md` documents; the workflow
   previously pushed the pre-rename `ghcr.io/sebastianspicker/concourse/bff`.
+- Source times without a zone are read in the pack's time zone instead of UTC:
+  HTML `datetime` values without an offset, ICS floating times, and all-day
+  dates (local midnight). ICS events whose `TZID` is not an IANA zone, such as
+  Outlook's `W. Europe Standard Time`, are read in the pack zone instead of
+  being dropped.
+- Moved ICS occurrences (`RECURRENCE-ID`) replace their original slot instead
+  of appearing twice, and `STATUS:CANCELLED` events are left out.
+- HTML entities in event titles and links are decoded, so titles no longer show
+  `&amp;` and links keep their query parameters.
+- ICS text with an escaped backslash before `n` (`\\n`) no longer turns into a
+  line break.
+- `pnpm capture:screenshots` no longer deletes a folder taken from an
+  environment variable; it always writes `docs/screenshots`, and its default
+  profiles match the runbook (`desktop,mobile`).
 
 ---
 

@@ -29,20 +29,25 @@ HTTPS tunnel or a locally trusted HTTPS proxy for physical-device development.
 | `CORS_ORIGINS` | Optional comma-separated origins; none are allowed by default. |
 | `BFF_DEFAULT_CACHE_TTL` | Integer 1–86400 seconds; default 300. |
 | `RRULE_EXPANSION_HORIZON_DAYS` | Integer 1–366 days; default 90. |
-| `BFF_RATE_LIMIT_MAX` | Integer 1–100000 requests per client per window; default 60. Failed bearer-token attempts keep a separate fixed bucket of 60 per minute. |
+| `BFF_RATE_LIMIT_MAX` | Integer 1–100000 requests per client per window; default 60. IPv4 clients count per address, IPv6 clients per /64; raise it when many clients share one address or /64. Failed bearer-token attempts keep a separate fixed bucket of 60 per minute. |
 | `BFF_RATE_LIMIT_WINDOW_SECONDS` | Integer 1–3600 seconds; default 60. |
 | `BFF_REQUIRE_AUTH` / `BFF_AUTH_TOKEN` | Optional bearer guard and its required secret. |
 | `BFF_TRUSTED_PROXIES` | Optional exact IP/CIDR allowlist for forwarded identity. |
-| `BFF_TRUST_PROXY` | `never` by default; accepts `never` or `always`. |
+| `BFF_TRUST_PROXY` | Unset by default (`never`); accepts `never` or `always`. Startup fails when it is set together with `BFF_TRUSTED_PROXIES`. |
 
 ICS recurrence processing accepts `FREQ`, positive `INTERVAL`, `COUNT`, `UNTIL`,
 `WKST`, unnumbered `BYDAY` on daily-or-coarser rules, and time selectors no finer
 than their recurrence frequency. Other `BY*` combinations are treated as an
 unsupported recurrence and the base event remains available without expansion.
+A `RECURRENCE-ID` entry replaces the occurrence it names (it keeps that
+occurrence's ID), and `STATUS:CANCELLED` removes an event or occurrence.
+`RANGE=THISANDFUTURE` is applied to the named occurrence only.
 
-`BFF_TRUSTED_PROXIES` enables trusted-proxy mode when no explicit mode overrides
-it. `always` trusts client-supplied forwarding headers and is only appropriate
-behind an isolated edge that replaces them.
+`BFF_TRUSTED_PROXIES` enables trusted-proxy mode. Leave `BFF_TRUST_PROXY` unset
+when you use it: the API refuses to start when both are set, because an explicit
+mode would otherwise silently disable the allowlist. `always` trusts
+client-supplied forwarding headers and is only appropriate behind an isolated
+edge that replaces them.
 
 `PUBLIC_EVENTS_MODE` and `PUBLIC_EVENTS_DATE` are deterministic test and
 local-development controls. `PUBLIC_EVENTS_MODE=mock` serves events and schedule
@@ -61,17 +66,18 @@ Leave both unset in production so sources use `auto` mode and the real clock.
 
 | Endpoint | Query | Behavior |
 |---|---|---|
-| `GET /health` | none | Process, selected-pack, uptime, and memory status; no upstream probe. |
+| `GET /health` | none | Process, selected-pack, and uptime status; no upstream probe. |
 | `GET /events` | `search`, `from`, `to`, `limit`, `offset` | Normalized public events. |
 | `GET /rooms` | `search`, `campus`, `limit`, `offset` | Pack-defined public rooms. |
 | `GET /schedule` | `search`, `campus`, `from`, `to`, `limit`, `offset` | Normalized public ICS occurrences. |
 | `GET /today` | `date=YYYY-MM-DD` | Campus-local events and rooms. |
 
-`/health` sends `Cache-Control: no-store` and returns 200 for `ok` or `warning`,
-503 for `error`. Missing route data returns `404 not_found`. Partial event or
+`/health` sends `Cache-Control: no-store` and returns 200 for `ok`, 503 for
+`error`. Missing route data returns `404 not_found`. Invalid `from`, `to`,
+`limit`, or `offset` values return `400 bad_request`. Partial event or
 schedule responses can include `_degraded: true` and `x-data-degraded: true`.
-Those results are not stored in the API source cache, but the HTTP response
-stays privately cacheable, and the client may persist validated degraded data
+The API source cache keeps those results for at most 60 seconds, the HTTP
+response stays privately cacheable, and the client may persist validated degraded data
 for bounded offline use. Every response includes `x-request-id`; data responses
 identify their pack with `x-institution-id`.
 
@@ -121,8 +127,8 @@ variants are eligible. Expired entries are evicted first, then the oldest write
 timestamp, with key order breaking ties. Larger responses stay usable online.
 Language, appearance, and unrelated storage values sit outside this cache.
 
-Clearing saved data cancels pending public loads, clears the memory and detail
-caches, and waits for queued public-storage deletion. Information already on
+Clearing saved data cancels pending public loads, clears the detail cache, and
+waits for queued public-storage deletion. Information already on
 screen stays there, and clearing does not fetch a replacement. Navigation,
 explicit refresh, and eligible recovery can load and save data again. Storage
 failures do not prevent valid network data from appearing. Offline availability
@@ -150,7 +156,7 @@ example `docker stop --time 15` or Compose `stop_grace_period: 15s`.
 | Institution mismatch | Use the same `INSTITUTION_ID` in the API and client configuration. |
 | Route returns 404 | Check that the selected pack has the corresponding public sources or rooms. |
 | Data is degraded | Inspect API logs and fetch the configured public source from the API host. |
-| Shared client rate-limit bucket | Use exact `BFF_TRUSTED_PROXIES`; avoid `always` on exposed APIs. If many clients must share one address, raise `BFF_RATE_LIMIT_MAX`. |
+| Shared client rate-limit bucket | Use exact `BFF_TRUSTED_PROXIES`; avoid `always` on exposed APIs. If many clients must share one address or IPv6 /64, raise `BFF_RATE_LIMIT_MAX`. |
 | Frozen install fails | Run `pnpm install` only after an intentional dependency change, and review the lockfile. |
 
 Use `x-request-id` to connect client-visible failures with structured API logs.

@@ -15,14 +15,14 @@ import {
 } from "./publicApi";
 import { usePublicResource, type PublicResource } from "./usePublicResource";
 
-type OfflineControls = { force?: boolean; signal?: AbortSignal; offlineMode?: boolean };
+type OfflineControls = { signal?: AbortSignal };
 
 function useOfflineResource<T, Q>(
   fetcher: (options: Q & OfflineControls) => Promise<ResourceLoadResult<T>>,
   query: Q,
   key: string
 ): PublicResource<T> {
-  return usePublicResource((controls) => fetcher({ ...query, ...controls, offlineMode: true }), key);
+  return usePublicResource((controls) => fetcher({ ...query, ...controls }), key);
 }
 
 /** Tracks the configured campus date and refreshes at its next local-day boundary. */

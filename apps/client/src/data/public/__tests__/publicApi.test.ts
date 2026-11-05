@@ -77,10 +77,10 @@ describe("public BFF data contract", () => {
     staticDemo.enabled = true;
 
     const [events, rooms, today, schedule] = await Promise.all([
-      fetchEvents({ force: true }),
-      fetchRooms({ search: "library", force: true }),
-      fetchToday({ date: "2026-09-14", force: true }),
-      fetchSchedule({ from: "2026-09-14", force: true }),
+      fetchEvents(),
+      fetchRooms({ search: "library" }),
+      fetchToday({ date: "2026-09-14" }),
+      fetchSchedule({ from: "2026-09-14" }),
     ]);
 
     expect(events).toMatchObject({ source: "memory-cache", data: { _sourcesConfigured: true } });
@@ -94,7 +94,7 @@ describe("public BFF data contract", () => {
     expect(schedule.data.schedule).toContainEqual(expect.objectContaining({ id: "orientation", title: "Campus orientation" }));
 
     // Today asks for its schedule with campus-day bounds as UTC instants; the fixture must follow that day.
-    const campusDay = await fetchSchedule({ from: "2026-10-02T22:00:00.000Z", to: "2026-10-03T21:59:59.999Z", force: true });
+    const campusDay = await fetchSchedule({ from: "2026-10-02T22:00:00.000Z", to: "2026-10-03T21:59:59.999Z" });
     expect(campusDay.data.schedule.every((item) => item.startsAt.startsWith("2026-10-03"))).toBe(true);
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -113,11 +113,10 @@ describe("public BFF data contract", () => {
       to: "2026-09-14T23:59:59.999Z",
       limit: 5,
       offset: 0,
-      force: true,
     })).resolves.toMatchObject({ data: { events: [event] }, source: "network" });
-    await expect(fetchRooms({ campus: "main", search: "library", limit: 10, offset: 0, force: true })).resolves.toMatchObject({ data: { rooms: [room] } });
-    await expect(fetchToday({ date: "2026-09-14", force: true })).resolves.toMatchObject({ data: { events: [event], rooms: [room] } });
-    await expect(fetchSchedule({ campus: "main", search: "orientation", from: "2026-09-14T00:00:00.000Z", to: "2026-09-14T23:59:59.999Z", limit: 5, offset: 0, force: true })).resolves.toMatchObject({ data: { schedule: [scheduleItem] } });
+    await expect(fetchRooms({ campus: "main", search: "library", limit: 10, offset: 0 })).resolves.toMatchObject({ data: { rooms: [room] } });
+    await expect(fetchToday({ date: "2026-09-14" })).resolves.toMatchObject({ data: { events: [event], rooms: [room] } });
+    await expect(fetchSchedule({ campus: "main", search: "orientation", from: "2026-09-14T00:00:00.000Z", to: "2026-09-14T23:59:59.999Z", limit: 5, offset: 0 })).resolves.toMatchObject({ data: { schedule: [scheduleItem] } });
 
     const requests = fetchMock.mock.calls.map(([url]) => new URL(String(url)));
     expect(requests.map((url) => url.pathname)).toEqual(["/events", "/rooms", "/today", "/schedule"]);
@@ -143,16 +142,16 @@ describe("public BFF data contract", () => {
   it("rejects a schema-invalid API response as a normalized validation failure", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ events: [{ ...event, sourceUrl: undefined }] }));
 
-    await expect(fetchEvents({ force: true })).rejects.toMatchObject({ code: "validation_error", status: 502 });
+    await expect(fetchEvents()).rejects.toMatchObject({ code: "validation_error", status: 502 });
     expect(toUiError(new ApiErrorException({ code: "validation_error", status: 502, message: "invalid" }))).toEqual({ kind: "invalidResponse" });
   });
 
-  it("coalesces forced validation failures without exposing an invalid response", async () => {
+  it("coalesces validation failures without exposing an invalid response", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ events: [{ ...event, sourceUrl: undefined }] }));
 
     const results = await Promise.allSettled([
-      fetchEvents({ force: true }),
-      fetchEvents({ force: true }),
+      fetchEvents(),
+      fetchEvents(),
     ]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -162,33 +161,10 @@ describe("public BFF data contract", () => {
     ]);
   });
 
-  it("keeps network-first and explicit memory request cohorts independent", async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ events: [event] }))
-      .mockResolvedValueOnce(jsonResponse({ events: [event] }));
-
-    const [memory, persisted] = await Promise.all([
-      fetchEvents({ force: true }),
-      fetchEvents({ force: true, offlineMode: true }),
-    ]);
-
-    expect(memory.source).toBe("network");
-    expect(persisted.source).toBe("network");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("uses completed memory only for the explicit non-persisted request path", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ rooms: [room] }));
-
-    await expect(fetchRooms()).resolves.toMatchObject({ source: "network" });
-    await expect(fetchRooms()).resolves.toMatchObject({ source: "memory-cache" });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
   it("rejects data served for a different institution before it reaches a resource", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ rooms: [room] }, "another-campus"));
 
-    await expect(fetchRooms({ force: true })).rejects.toMatchObject({ code: "institution_mismatch", status: 409 });
+    await expect(fetchRooms()).rejects.toMatchObject({ code: "institution_mismatch", status: 409 });
     expect(toUiError(new ApiErrorException({ code: "institution_mismatch", status: 409, message: "mismatch" }))).toEqual({ kind: "institutionMismatch" });
   });
 
@@ -198,7 +174,7 @@ describe("public BFF data contract", () => {
       .mockResolvedValueOnce(jsonResponse({ error: { code: "upstream_unavailable", message: "try later" } }, "example", 503))
       .mockResolvedValueOnce(jsonResponse({ events: [event], rooms: [room] }));
 
-    const result = fetchToday({ force: true });
+    const result = fetchToday();
     await vi.advanceTimersByTimeAsync(1_000);
 
     await expect(result).resolves.toMatchObject({ data: { events: [event], rooms: [room] } });
@@ -211,7 +187,7 @@ describe("public BFF data contract", () => {
       429,
       { "retry-after": "1" },
     )));
-    const exhausted = fetchToday({ force: true });
+    const exhausted = fetchToday({ date: "2026-09-15" }); // different key: nothing saved to fall back on
     const capturedError = exhausted.then(
       () => new Error("Expected the rate-limited request to fail"),
       (reason: unknown) => reason,
@@ -250,11 +226,11 @@ describe("public BFF data contract", () => {
     await setPersistedCache(key, { events: [event] });
     fetchMock.mockRejectedValue(new TypeError("offline"));
 
-    const firstRequest = fetchEvents({ search: "saved", force: true, offlineMode: true });
+    const firstRequest = fetchEvents({ search: "saved" });
     await vi.advanceTimersByTimeAsync(3_000);
     const first = await firstRequest;
     await vi.advanceTimersByTimeAsync(5_000);
-    const secondRequest = fetchEvents({ search: "saved", offlineMode: true });
+    const secondRequest = fetchEvents({ search: "saved" });
     let secondResolvedAt = 0;
     const observedSecond = secondRequest.then((result) => {
       secondResolvedAt = Date.now();
@@ -278,7 +254,7 @@ describe("public BFF data contract", () => {
       { error: { code: "rate_limited", message: "wait" } }, "example", 429, { "retry-after": "20" },
     )));
 
-    const request = fetchEvents({ search: "limited", force: true, offlineMode: true });
+    const request = fetchEvents({ search: "limited" });
     const outcome = request.then((result) => result, (reason: unknown) => reason);
     await vi.advanceTimersByTimeAsync(16_000);
 
@@ -292,7 +268,7 @@ describe("public BFF data contract", () => {
       { error: { code: "rate_limited", message: "wait" } }, "example", 429, { "retry-after": "20" },
     )));
 
-    const request = fetchEvents({ search: "unsaved", force: true, offlineMode: true });
+    const request = fetchEvents({ search: "unsaved" });
     const outcome = request.then(() => new Error("Expected the rate-limited request to fail"), (reason: unknown) => reason);
     await vi.advanceTimersByTimeAsync(16_000);
 
@@ -311,7 +287,7 @@ describe("public BFF data contract", () => {
         init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
       }));
 
-    const request = fetchEvents({ search: "slow", force: true, offlineMode: true });
+    const request = fetchEvents({ search: "slow" });
     const outcome = request.then((result) => result, (reason: unknown) => reason);
     await vi.advanceTimersByTimeAsync(16_000);
 

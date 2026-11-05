@@ -1,40 +1,17 @@
 import { createAbortError } from "@/platform/http/errors";
 
-type CacheEntry<T> = {
-  value: T;
-  expiresAt: number;
-};
-
 type CoordinatedLoad = {
   controller: AbortController;
   consumers: Set<symbol>;
   promise: Promise<unknown>;
 };
 
-export type CachedValue<T> = {
-  value: T;
-  fromCache: boolean;
-};
-
-const cache = new Map<string, CacheEntry<unknown>>();
 const inFlight = new Map<string, CoordinatedLoad>();
-const MAX_CACHE_ENTRIES = 50;
 const DEFAULT_LOADER_TIMEOUT_MS = 15_000;
-
-function evictIfNeeded(): void {
-  if (cache.size <= MAX_CACHE_ENTRIES) return;
-  const keys = cache.keys();
-  while (cache.size > MAX_CACHE_ENTRIES) {
-    const key = keys.next().value;
-    if (key === undefined) break;
-    cache.delete(key);
-  }
-}
 
 function runCoordinatedLoader<T>(
   key: string,
   loader: (signal: AbortSignal) => Promise<T>,
-  ttlMs: number,
 ): CoordinatedLoad {
   const controller = new AbortController();
   const coordinated: CoordinatedLoad = {
@@ -59,8 +36,6 @@ function runCoordinatedLoader<T>(
   coordinated.promise = Promise.race([loaded, deadline])
     .then((value) => {
       if (controller.signal.aborted) throw createAbortError();
-      cache.set(key, { value, expiresAt: Date.now() + ttlMs });
-      evictIfNeeded();
       return value;
     })
     .finally(() => {
@@ -113,50 +88,31 @@ function attachConsumer<T>(load: CoordinatedLoad, signal?: AbortSignal): Promise
   });
 }
 
-/** Returns a fresh memory value or joins one coordinated loader for the key. */
-export async function getCachedWithMetadata<T>(
+/** Joins the one coordinated loader for the key, starting it if none is in flight. */
+export async function shareLoad<T>(
   key: string,
   loader: (signal: AbortSignal) => Promise<T>,
-  ttlMs: number,
-  force = false,
   signal?: AbortSignal,
-): Promise<CachedValue<T>> {
+): Promise<T> {
   if (signal?.aborted) throw createAbortError();
-  const entry = cache.get(key) as CacheEntry<T> | undefined;
-  if (!force && entry && entry.expiresAt > Date.now()) {
-    return { value: entry.value, fromCache: true };
-  }
 
   let coordinated = inFlight.get(key);
   if (coordinated?.controller.signal.aborted) {
     if (inFlight.get(key) === coordinated) inFlight.delete(key);
     coordinated = undefined;
   }
-  coordinated ??= runCoordinatedLoader(key, loader, ttlMs);
-  return { value: await attachConsumer<T>(coordinated, signal), fromCache: false };
+  coordinated ??= runCoordinatedLoader(key, loader);
+  return attachConsumer<T>(coordinated, signal);
 }
 
-/** Compatibility wrapper for callers that only need the cached value. */
-export async function getCached<T>(
-  key: string,
-  loader: ((signal: AbortSignal) => Promise<T>) | (() => Promise<T>),
-  ttlMs: number,
-  force = false,
-  signal?: AbortSignal,
-): Promise<T> {
-  return (await getCachedWithMetadata(key, loader, ttlMs, force, signal)).value;
-}
-
-/** Clears memory and aborts the shared transport for every affected key. */
+/** Aborts the shared transport for every affected key. */
 export function clearCache(key?: string): void {
   if (key) {
-    cache.delete(key);
     inFlight.get(key)?.controller.abort();
     inFlight.delete(key);
     return;
   }
 
-  cache.clear();
   for (const load of inFlight.values()) load.controller.abort();
   inFlight.clear();
 }

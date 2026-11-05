@@ -36,7 +36,6 @@ import {
 } from "../persistedCache";
 import { getPublicCacheKey } from "../publicCacheKey";
 import { getStaticDemoResponse } from "../staticDemoData";
-import { getCached } from "../cache";
 import { clearPublicDataState, subscribePublicDataClear } from "../publicDataLifecycle";
 import { selectedEventDetails } from "../selectedDetailRecords";
 
@@ -127,7 +126,7 @@ describe("mobile cache and static-demo characterization", () => {
     }
   });
 
-  it("clears memory, snapshots, and selected-detail handoff in one operation", async () => {
+  it("clears snapshots, and selected-detail handoff in one operation", async () => {
     const demo = getStaticDemoResponse("/events", undefined);
     if (!("events" in demo) || !demo.events[0]) throw new Error("Events fixture contract changed");
     selectedEventDetails.remember(demo.events[0]);
@@ -138,14 +137,12 @@ describe("mobile cache and static-demo characterization", () => {
       data: { status: "legacy" },
       timestamp: Date.now(),
     }));
-    await getCached("clear-test", async () => 1, 60_000);
 
     await clearPublicDataState();
 
     expect(selectedEventDetails.get(demo.events[0].id)).toBeNull();
     expect(storage.values.has(`${CACHE_STORAGE_NAMESPACE}${persistedKey}`)).toBe(false);
     expect(storage.values.has(`campus-app-kit:${legacyKey}`)).toBe(false);
-    await expect(getCached("clear-test", async () => 2, 60_000)).resolves.toBe(2);
   });
 
   it("preserves rendered information, stops its spinner, and does not start a replacement load on clear", async () => {

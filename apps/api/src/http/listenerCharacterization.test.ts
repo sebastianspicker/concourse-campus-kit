@@ -118,21 +118,27 @@ describe("listener query parsing", () => {
     await request(await createApp()).get(`/events?limit=${limit}`).expect(200);
   });
 
-  it("ignores unparseable offset, from and to values", async () => {
-    const response = await request(await createApp())
-      .get("/events?offset=abc&from=not-a-date&to=also-bad")
-      .expect(200);
+  it.each([
+    ["/events?from=2026-13-01", "from must be an ISO 8601 date-time"],
+    ["/schedule?to=nope", "to must be an ISO 8601 date-time"],
+    ["/events?offset=abc", "offset must be a non-negative integer"],
+    ["/events?offset=-1", "offset must be a non-negative integer"],
+    ["/events?offset=1.5", "offset must be a non-negative integer"],
+    ["/events?offset=1e3", "offset must be a non-negative integer"],
+    ["/events?offset=0x10", "offset must be a non-negative integer"],
+    ["/events?offset=%205", "offset must be a non-negative integer"]
+  ])("rejects %s with 400 bad_request", async (path, message) => {
+    const response = await request(await createApp()).get(path).expect(400);
 
-    expect(response.body.events).toEqual(events);
-    expect(response.body._total).toBe(1);
+    expect(response.body.error).toEqual({ code: "bad_request", message });
   });
 
-  it("clamps negative offsets to zero and floors fractional ones", async () => {
-    const negative = await request(await createApp()).get("/events?offset=-5").expect(200);
-    const beyond = await request(await createApp()).get("/events?offset=1.9").expect(200);
+  it("filters by valid ISO from and to values", async () => {
+    const inside = await request(await createApp()).get("/events?from=2026-08-28T00:00:00Z&to=2026-08-29T00:00:00Z").expect(200);
+    const outside = await request(await createApp()).get("/events?from=2026-09-01T00:00:00Z").expect(200);
 
-    expect(negative.body.events).toEqual(events);
-    expect(beyond.body.events).toEqual([]);
+    expect(inside.body.events).toEqual(events);
+    expect(outside.body.events).toEqual([]);
   });
 
   it("rejects an invalid today date with 400 bad_request", async () => {
@@ -185,6 +191,7 @@ describe("listener health, institution and method errors", () => {
     const response = await request(await createApp()).get("/health").expect(200);
 
     expect(response.body).toMatchObject({ status: "ok", institution: "mockuni" });
+    expect(response.body.checks).toEqual({ institutionPack: { status: "ok" } });
   });
 
   it("reports health 503 when the institution pack cannot be loaded", async () => {
@@ -309,9 +316,17 @@ describe("listener forwarded client identity", () => {
     expect(await exhaust(app, (i) => `203.0.113.${i + 1}`)).toBe(200);
   });
 
-  it("keeps BFF_TRUST_PROXY=never authoritative over configured proxy ranges", async () => {
-    const app = await createApp({ BFF_TRUST_PROXY: "never", BFF_TRUSTED_PROXIES: "127.0.0.1,::1,::ffff:127.0.0.1" });
+  it("shares one rate-limit bucket across an IPv6 /64", async () => {
+    const app = await createApp({ BFF_TRUSTED_PROXIES: "127.0.0.1", BFF_RATE_LIMIT_MAX: "1" });
+    await request(app).get("/health").set("x-forwarded-for", "2001:db8:1:2::a").expect(200);
 
-    expect(await exhaust(app, (i) => `203.0.113.${i + 1}`)).toBe(429);
+    await request(app).get("/health").set("x-forwarded-for", "2001:db8:1:2::b").expect(429);
+  });
+
+  it("keeps different IPv6 /64 networks in separate buckets", async () => {
+    const app = await createApp({ BFF_TRUSTED_PROXIES: "127.0.0.1", BFF_RATE_LIMIT_MAX: "1" });
+    await request(app).get("/health").set("x-forwarded-for", "2001:db8:1:2::a").expect(200);
+
+    await request(app).get("/health").set("x-forwarded-for", "2001:db8:1:3::a").expect(200);
   });
 });

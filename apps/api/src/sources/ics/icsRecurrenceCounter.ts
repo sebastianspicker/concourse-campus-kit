@@ -4,12 +4,15 @@ import { parseIcsDate } from "./recurrenceDate";
 import { isRecurrenceEligible, type RecurrencePreflightOptions } from "./recurrenceRules";
 import { forEachValidIcsEvent, type EventAccumulator } from "./icsEventStream";
 
-/** Counts recurrence candidates that can pass preflight without expanding them. */
-export function countRecurringEvents(ics: string, options: Omit<RecurrencePreflightOptions, "dtStart">): number {
+type CountOptions = Omit<RecurrencePreflightOptions, "dtStart"> & { timeZone?: string };
+
+/** Counts recurrence candidates that can pass preflight, zoning dates exactly as the parse pass does. */
+export function countRecurringEvents(ics: string, options: CountOptions): number {
+  const { timeZone, ...preflight } = options;
   let count = 0;
   forEachValidIcsEvent(ics, (event) => {
-    if (isCountableRecurring(event, options)) count += 1;
-  });
+    if (isCountableRecurring(event, preflight)) count += 1;
+  }, timeZone);
   return count;
 }
 

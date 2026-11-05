@@ -4,7 +4,6 @@ import { getCampusDateKey } from "./campusDate";
 import { InvalidQueryParameterError, NoConfiguredSourcesError } from "./errors";
 import type { PublicDataSources, PublicEventsSourceResult } from "./publicSources";
 
-const DEFAULT_TIME_ZONE = "Europe/Berlin";
 const EMPTY_EVENTS_RESULT: PublicEventsSourceResult = { events: [], degraded: false };
 
 function isValidDateParam(value: string): boolean {
@@ -38,7 +37,7 @@ function filterEventsForDate(events: TodayResponse["events"], today: string, tim
 
 export async function getToday(institution: InstitutionPack, date: string | undefined, sources: PublicDataSources, now = new Date()): Promise<TodayResponse> {
   if (!hasConfiguredTodaySources(institution)) throw new NoConfiguredSourcesError("No event or room sources configured for today view");
-  const timeZone = institution.timezone ?? DEFAULT_TIME_ZONE;
+  const timeZone = institution.timezone;
   const today = resolveTodayDate(date, timeZone, now);
   const { events, degraded } = await loadTodayEvents(institution, sources);
   return { events: filterEventsForDate(events, today, timeZone), rooms: institution.publicRooms ?? [], _degraded: degraded, _sourcesConfigured: true };

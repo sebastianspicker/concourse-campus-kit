@@ -14,6 +14,8 @@ export function utcDateFromParts(parts: DateTimeParts): Date {
   return date;
 }
 
+// Zone names come from untrusted feeds; cap the cache so distinct spellings of valid zones cannot grow it.
+const MAX_CACHED_FORMATTERS = 64;
 const formatterCache = new Map<string, Intl.DateTimeFormat>();
 
 function formatterFor(timeZone: string): Intl.DateTimeFormat {
@@ -30,8 +32,23 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
     timeZone,
     year: "numeric"
   });
-  formatterCache.set(timeZone, formatter);
+  if (formatterCache.size < MAX_CACHED_FORMATTERS) formatterCache.set(timeZone, formatter);
   return formatter;
+}
+
+const MAX_REMEMBERED_UNKNOWN_TIME_ZONES = 256;
+const unknownTimeZones = new Set<string>();
+
+/** Reports whether Intl accepts a zone name, remembering rejections so repeated feed TZIDs throw only once. */
+export function isKnownTimeZone(timeZone: string): boolean {
+  if (unknownTimeZones.has(timeZone)) return false;
+  try {
+    formatterFor(timeZone);
+    return true;
+  } catch {
+    if (unknownTimeZones.size < MAX_REMEMBERED_UNKNOWN_TIME_ZONES) unknownTimeZones.add(timeZone);
+    return false;
+  }
 }
 
 function getZonedDateTimeParts(date: Date, timeZone: string): DateTimeParts {

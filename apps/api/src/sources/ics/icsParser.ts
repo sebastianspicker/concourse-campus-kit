@@ -9,8 +9,8 @@ import {
   SCHEDULE_TITLE_MAX_LENGTH
 } from "@concourse/contracts";
 import { parseIcsDate } from "./recurrenceDate";
-import { expandRecurringEvent, type IcsDateProperty, type ParsedIcsEvent } from "./recurrenceRules";
-import { forEachValidIcsEvent, type IcsPropertyMap } from "./icsEventStream";
+import { expandRecurringEvent, instanceId, type IcsDateProperty, type ParsedIcsEvent } from "./recurrenceRules";
+import { forEachValidIcsEvent, type EventAccumulator, type IcsPropertyMap } from "./icsEventStream";
 import { countRecurringEvents } from "./icsRecurrenceCounter";
 
 export type { ParsedIcsEvent } from "./recurrenceRules";
@@ -21,6 +21,9 @@ const DEFAULT_MAX_TOTAL_EVENTS = 1000;
 const MAX_RRULE_WORK_PER_DOCUMENT = 50_000;
 const DIRECT_RRULE_PROPERTY_PATTERN = /(?:^|[\r\n])RRULE[;:]/i;
 const ICS_FOLD_PATTERN = /[\r\n][ \t]/;
+const RECURRENCE_ID_PATTERN = /RECURRENCE-ID/i;
+const MAX_OVERRIDES_PER_UID = 512;
+const MAX_OVERRIDES_PER_DOCUMENT = 2_048;
 
 /** Retains a valid UTF-16 prefix that also satisfies the shared wire-schema length limit. */
 const truncateScheduleText = (value: string, maximumLength: number): string => {
@@ -38,11 +41,15 @@ const generateStableId = (title: string, startsAt: string): string => {
   return createHash("sha256").update(`${title}|${startsAt}`).digest("hex").slice(0, 16);
 }
 
+/** Normalizes the UID once so series instances and their overrides hash the same base id. */
+const eventUid = (current: IcsPropertyMap): string | undefined =>
+  current.UID?.value ? normalizeScheduleText(current.UID.value, SCHEDULE_ID_MAX_LENGTH) : undefined;
+
 /** Converts validated VEVENT fields into one base event before recurrence expansion. */
 const buildBaseEvent = (current: IcsPropertyMap, summary: string, dtStart: string): ParsedIcsEvent => {
   const startsAt = parseIcsDate(dtStart, current.DTSTART?.params.TZID);
   const title = normalizeScheduleText(summary, SCHEDULE_TITLE_MAX_LENGTH);
-  const uid = current.UID?.value ? normalizeScheduleText(current.UID.value, SCHEDULE_ID_MAX_LENGTH) : undefined;
+  const uid = eventUid(current);
   return {
     id: uid || generateStableId(title, startsAt), title, startsAt,
     endsAt: current.DTEND?.value ? parseIcsDate(current.DTEND.value, current.DTEND.params.TZID) : undefined,
@@ -92,7 +99,7 @@ export function retainRelevantEvents(events: ParsedIcsEvent[], maxTotal: number,
   return retained.sort(compareChronologically);
 }
 
-export interface ParseIcsOptions { rruleHorizonDays?: number; rruleMaxInstances?: number; maxTotalEvents?: number; referenceDate?: Date; }
+export interface ParseIcsOptions { rruleHorizonDays?: number; rruleMaxInstances?: number; maxTotalEvents?: number; referenceDate?: Date; timeZone?: string; }
 
 type ParseContext = {
   horizonDays: number;
@@ -100,7 +107,9 @@ type ParseContext = {
   expansionMaxInstances: number;
   referenceDate: Date;
   recurrenceWorkPerEvent: number;
+  timeZone?: string;
 };
+type OverridesByUid = Map<string, IcsDateProperty[]>;
 
 /** Floors caller limits and clamps them to a non-negative parser safety maximum. */
 const bounded = (value: number | undefined, fallback: number, maximum: number): number => {
@@ -117,7 +126,8 @@ const parseContext = (options: ParseIcsOptions | undefined, recurringCount: numb
     maxTotalEvents,
     expansionMaxInstances: Math.min(maxInstances, maxTotalEvents),
     referenceDate,
-    recurrenceWorkPerEvent: recurringCount > 0 ? Math.floor(MAX_RRULE_WORK_PER_DOCUMENT / recurringCount) : 0
+    recurrenceWorkPerEvent: recurringCount > 0 ? Math.floor(MAX_RRULE_WORK_PER_DOCUMENT / recurringCount) : 0,
+    timeZone: options?.timeZone
   };
 }
 
@@ -127,20 +137,69 @@ const countDocumentRecurringEvents = (ics: string, context: ParseContext): numbe
   return countRecurringEvents(ics, {
     referenceDate: context.referenceDate,
     horizonDays: context.horizonDays,
-    maxInstances: context.expansionMaxInstances
+    maxInstances: context.expansionMaxInstances,
+    timeZone: context.timeZone
   });
 }
 
+/** Records one override's original slot under its series UID, bounded per series (like EXDATE) and per document. */
+const recordOverride = (overrides: OverridesByUid, event: EventAccumulator, recorded: { count: number }): void => {
+  const uid = eventUid(event.current);
+  const recurrenceId = event.current["RECURRENCE-ID"];
+  if (!uid || !recurrenceId || recorded.count >= MAX_OVERRIDES_PER_DOCUMENT) return;
+  const slots = overrides.get(uid) ?? [];
+  if (slots.length >= MAX_OVERRIDES_PER_UID) return;
+  slots.push(recurrenceId);
+  overrides.set(uid, slots);
+  recorded.count += 1;
+};
+
+/** Collects every RECURRENCE-ID per UID, cancelled ones included, so the series can drop those slots. */
+const collectOverrides = (ics: string, timeZone: string | undefined): OverridesByUid => {
+  const overrides: OverridesByUid = new Map();
+  if (!RECURRENCE_ID_PATTERN.test(ics)) return overrides;
+  // shortcut: RANGE=THISANDFUTURE is treated as a single-instance override, upgrade when a real feed relies on it.
+  // shortcut: a cancelled master does not cancel overrides that lack their own STATUS:CANCELLED, upgrade if a feed does that.
+  const recorded = { count: 0 };
+  forEachValidIcsEvent(ics, (event) => recordOverride(overrides, event, recorded), timeZone);
+  return overrides;
+};
+
+const isCancelled = (current: IcsPropertyMap): boolean => current.STATUS?.value.trim().toUpperCase() === "CANCELLED";
+
+/** Original slot of an override; a malformed RECURRENCE-ID falls back to the override's own start. */
+const overrideSlot = (recurrenceId: IcsDateProperty, fallback: string): string => {
+  try { return parseIcsDate(recurrenceId.value, recurrenceId.params.TZID); } catch { return fallback; }
+};
+
+/** Gives an override the id its series assigned to the original slot, so links keep resolving. */
+const withOverrideId = (event: ParsedIcsEvent, current: IcsPropertyMap): ParsedIcsEvent => {
+  const recurrenceId = current["RECURRENCE-ID"];
+  const uid = eventUid(current);
+  if (!recurrenceId || !uid) return event;
+  return { ...event, id: instanceId(uid, overrideSlot(recurrenceId, event.startsAt)) };
+};
+
+/** Hands a UID's overridden slots to its first series master only, so duplicate masters cannot multiply the work. */
+const seriesExdates = (event: EventAccumulator, overrides: OverridesByUid): IcsDateProperty[] => {
+  const uid = eventUid(event.current);
+  if (event.current["RECURRENCE-ID"] || !uid) return event.exdates;
+  const slots = overrides.get(uid) ?? [];
+  overrides.delete(uid);
+  return event.exdates.concat(slots);
+};
+
 /** Builds one event and expands recurrence only after the document budget permits it. */
-const appendEvent = (events: ParsedIcsEvent[], current: IcsPropertyMap, exdates: IcsDateProperty[], context: ParseContext): void => {
+const appendEvent = (events: ParsedIcsEvent[], event: EventAccumulator, context: ParseContext, overrides: OverridesByUid): void => {
+  const { current } = event;
   const summary = current.SUMMARY?.value.trim();
   const dtStart = current.DTSTART?.value.trim();
-  if (!summary || !dtStart) return;
+  if (!summary || !dtStart || isCancelled(current)) return;
   try {
-    const baseEvent = buildBaseEvent(current, summary, dtStart);
+    const baseEvent = withOverrideId(buildBaseEvent(current, summary, dtStart), current);
     const rule = current.RRULE?.value.trim();
     const candidates = rule ? expandRecurringEvent(baseEvent, rule, {
-      dtStart: current.DTSTART, exdates, horizonDays: context.horizonDays,
+      dtStart: current.DTSTART, exdates: seriesExdates(event, overrides), horizonDays: context.horizonDays,
       maxInstances: context.expansionMaxInstances, referenceDate: context.referenceDate,
       workBudget: { remaining: context.recurrenceWorkPerEvent }
     }) : [baseEvent];
@@ -153,17 +212,12 @@ export function parseIcs(ics: string, options?: ParseIcsOptions): ParsedIcsEvent
   const limits = parseContext(options, 1);
   if (limits.maxTotalEvents === 0) return [];
   const context = parseContext(options, countDocumentRecurringEvents(ics, limits));
+  const overrides = collectOverrides(ics, context.timeZone);
   const events: ParsedIcsEvent[] = [];
-  forEachValidIcsEvent(ics, (event) => appendEvent(events, event.current, event.exdates, context));
+  forEachValidIcsEvent(ics, (event) => appendEvent(events, event, context, overrides), context.timeZone);
   return events.sort(compareChronologically);
 }
 
 /** Decodes ICS text escapes after structural parsing has separated property values. */
-const unescapeIcsValue = (value: string): string => {
-  return value
-    .replaceAll("\\n", "\n")
-    .replaceAll("\\N", "\n")
-    .replaceAll("\\,", ",")
-    .replaceAll("\\;", ";")
-    .replaceAll("\\\\", "\\");
-}
+const unescapeIcsValue = (value: string): string =>
+  value.replace(/\\([\\;,nN])/g, (_, c: string) => (c === "n" || c === "N" ? "\n" : c));

@@ -63,8 +63,3 @@ export function createTrustedProxyMatcher(values: readonly string[]): TrustedPro
     }
   };
 }
-
-/** Rejects malformed CIDRs before they can weaken proxy trust decisions. */
-export function validateTrustedProxyRanges(values: readonly string[]): void {
-  createTrustedProxyMatcher(values);
-}

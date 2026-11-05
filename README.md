@@ -6,6 +6,8 @@ Concourse turns a university's public events pages, calendar feeds, and room
 lists into one calm, accessible campus app: a Node.js backend-for-frontend (BFF)
 and an Expo Router client for iOS, Android, and the web.
 
+> _Claude was used to polish and proof-read the code and documentation of this repository._
+
 <details>
 <summary>Status and limitations</summary>
 
@@ -26,7 +28,7 @@ release, a hosted API, or a signed store build.
 
 [Open the static demo](https://sebastianspicker.github.io/concourse-campus-kit/) ·
 [Browse the design preview](https://sebastianspicker.github.io/concourse-campus-kit/design-preview/) ·
-[Read the architecture](docs/architecture.md)
+[See how it works](docs/architecture.md)
 
 [![ci](https://github.com/sebastianspicker/concourse-campus-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/concourse-campus-kit/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/sebastianspicker/concourse-campus-kit/actions/workflows/codeql.yml/badge.svg)](https://github.com/sebastianspicker/concourse-campus-kit/actions/workflows/codeql.yml)

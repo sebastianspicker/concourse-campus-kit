@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { InstitutionPack } from "@concourse/institutions";
 import { isPublicHttpUrl, SCHEDULE_RESPONSE_MAX_ITEMS, type ScheduleItem } from "@concourse/contracts";
 import { log } from "../../runtime/logger";
-import { getCached } from "../upstream/cache";
+import { getCached, ttlUnlessDegraded } from "../upstream/cache";
 import { getPublicSourceBreaker } from "../upstream/circuitBreaker";
 import { fetchTextWithTimeout } from "../upstream/httpClient";
 import { parseIcs, retainRelevantEvents, type ParsedIcsEvent } from "./icsParser";
@@ -37,11 +37,11 @@ function sourceLabelSchedule(sources: ScheduleSource[], date: Date): ScheduleIte
 }
 
 /** Fetches and parses one source through its source-scoped circuit breaker. */
-async function loadScheduleSource(source: ScheduleSource, signal: AbortSignal, rruleHorizonDays: number): Promise<ParsedIcsEvent[]> {
+async function loadScheduleSource(source: ScheduleSource, signal: AbortSignal, rruleHorizonDays: number, timeZone: string | undefined): Promise<ParsedIcsEvent[]> {
   const text = await getPublicSourceBreaker("public-schedule", source.url).call(
     () => fetchTextWithTimeout(source.url, { signal })
   );
-  return parseIcs(text, { rruleHorizonDays });
+  return parseIcs(text, { rruleHorizonDays, timeZone });
 }
 
 /** Logs a failed source and returns no events so successful sources remain usable. */
@@ -77,10 +77,11 @@ async function loadScheduleSources(
   sources: ScheduleSource[],
   signal: AbortSignal,
   hasRejectedSource: boolean,
-  rruleHorizonDays: number
+  rruleHorizonDays: number,
+  timeZone: string | undefined
 ): Promise<FetchPublicScheduleResult> {
   const settledSources = await Promise.allSettled(
-    sources.map((source) => loadScheduleSource(source, signal, rruleHorizonDays))
+    sources.map((source) => loadScheduleSource(source, signal, rruleHorizonDays, timeZone))
   );
 
   if (hasRejectedSource && sources.length === 0) {
@@ -106,12 +107,12 @@ export async function fetchPublicSchedule(
   if (options.mode === "mock") {
     return { schedule: sourceLabelSchedule(sources, options.date ?? new Date()), degraded: hasRejectedSource };
   }
-  const loader = (signal: AbortSignal) => loadScheduleSources(sources, signal, hasRejectedSource, options.rruleHorizonDays);
+  const loader = (signal: AbortSignal) => loadScheduleSources(sources, signal, hasRejectedSource, options.rruleHorizonDays, institution.timezone);
 
   return getCached(
     cacheKey,
     loader,
     ttlMs,
-    { shouldCache: (result) => !result.degraded }
+    { ttlFor: ttlUnlessDegraded(ttlMs) }
   );
 }

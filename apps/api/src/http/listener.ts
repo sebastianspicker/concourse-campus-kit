@@ -8,6 +8,7 @@ import { guardAuth, isInvalidAuthAttempt } from "../security/auth";
 import { getCorsHeaders } from "../security/cors";
 import { resolveForwardedClientKey } from "../security/forwardedIdentity";
 import { guardSecurityHeaders } from "../security/headers";
+import { rateLimitIdentity } from "../security/ipAddress";
 import { createRateLimiter, type RateLimiter } from "../security/rateLimit";
 import { handleHealth } from "./health";
 import { createDataRouteHandlers, sendLoggedError, type DataRouteHandlers } from "./routes";
@@ -114,7 +115,9 @@ function handleListenerError(res: ServerResponse, requestId: string, error: unkn
 function guardRequestAccess(context: ListenerContext, scope: RequestScope, path: string): boolean {
   const { req, res, requestId } = scope;
   const { config, limiter } = context;
-  const clientKey = resolveForwardedClientKey(req, { trustProxy: config.trustProxy, trustedProxyMatcher: config.trustedProxyMatcher });
+  const clientKey = rateLimitIdentity(
+    resolveForwardedClientKey(req, { trustProxy: config.trustProxy, trustedProxyMatcher: config.trustedProxyMatcher })
+  );
   if (isInvalidAuthAttempt(req, config)) {
     const authRate = limiter.check(`auth:${clientKey}`);
     if (!authRate.allowed) { handleRateLimitExceeded(scope, path, authRate.retryAfter); return false; }

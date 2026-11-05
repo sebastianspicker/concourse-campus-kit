@@ -17,18 +17,14 @@ import {
 import type { z } from "zod";
 import { getJsonResult } from "@/platform/http/client";
 import { ApiErrorException } from "@/platform/http/errors";
-import { getCachedWithMetadata } from "./cache";
+import { shareLoad } from "./cache";
 import { getPublicCacheKey } from "./publicCacheKey";
 import { fetchNetworkFirstWithFallback } from "./persistedCache";
 import { isStaticDemo } from "./staticDemo";
 import { getStaticDemoResponse } from "./staticDemoData";
 
-const DEFAULT_TTL_MS = 60_000;
-
 export type RequestControls = {
-  force?: boolean;
   signal?: AbortSignal;
-  offlineMode?: boolean;
 };
 
 type CachedJsonOptions = RequestControls & { queryParams?: Record<string, string> };
@@ -60,7 +56,7 @@ function getQueryString(queryParams?: Record<string, string>): string {
 }
 
 /**
- * Loads a public resource through the memory and persisted-cache layers while preserving
+ * Loads a public resource through the persisted-cache layer while preserving
  * whether a result is fresh, stale, or degraded for the UI.
  */
 async function getCachedJson<T>(
@@ -71,8 +67,6 @@ async function getCachedJson<T>(
 ): Promise<ResourceLoadResult<T>> {
   const cacheKey = getPublicCacheKey(keySuffix, options?.queryParams);
   const queryString = getQueryString(options?.queryParams);
-  const networkFirst = options?.offlineMode === true;
-  const coordinationKey = `${cacheKey}|${networkFirst ? "network-first" : "memory"}`;
 
   if (isStaticDemo()) {
     return {
@@ -83,23 +77,9 @@ async function getCachedJson<T>(
     };
   }
 
-  const cached = await getCachedWithMetadata(
-    coordinationKey,
+  return shareLoad(
+    cacheKey,
     async (sharedSignal) => {
-      if (!networkFirst) {
-        const result = await getJsonResult<T>(
-          `${path}${queryString}`,
-          (value) => safeParse(value, schema),
-          { signal: sharedSignal },
-        );
-        return {
-          data: result.data,
-          source: "network" as const,
-          updatedAt: Date.now(),
-          cacheAge: null,
-        };
-      }
-
       const result = await fetchNetworkFirstWithFallback<T>(
         cacheKey,
         async () => (await getJsonResult<T>(
@@ -116,23 +96,8 @@ async function getCachedJson<T>(
         cacheAge: result.cacheAge,
       };
     },
-    DEFAULT_TTL_MS,
-    networkFirst || (options?.force ?? false),
     options?.signal,
   );
-
-  if (!cached.fromCache) return cached.value;
-  if (cached.value.source === "persisted-cache") {
-    return {
-      ...cached.value,
-      cacheAge: Math.max(0, Date.now() - cached.value.updatedAt),
-    };
-  }
-  return {
-    ...cached.value,
-    source: "memory-cache",
-    cacheAge: Math.max(0, Date.now() - cached.value.updatedAt),
-  };
 }
 
 export type EventsQuery = PublicEventsQuery;
@@ -152,9 +117,9 @@ function dispatchPublicEndpoint<T, Q extends PublicQuery>(
   schema: z.ZodType<T>,
   keySuffix: string
 ): Promise<ResourceLoadResult<T>> {
-  const { force, signal, offlineMode, ...query } = options;
+  const { signal, ...query } = options;
 
-  return getCachedJson(path, schema, keySuffix, { force, signal, offlineMode, queryParams: serializeQuery(query) });
+  return getCachedJson(path, schema, keySuffix, { signal, queryParams: serializeQuery(query) });
 }
 
 export function fetchEvents(options: PublicRequestOptions<EventsQuery> = {}): Promise<ResourceLoadResult<EventsResponse>> {

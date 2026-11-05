@@ -14,6 +14,42 @@ scans. Other source checks and all publication require manual dispatch.
 | `pages` | manual dispatch from `main` only | Builds the fixture-only static demo and its design preview, then deploys the verified artifact. |
 | `release` | manual dispatch from `main`, with an existing version tag | Checks metadata and the source gate, verifies the `apps/api` image, pushes it to GHCR, and creates the GitHub Release. |
 
+Publication is two manual workflows. This diagram shows what each one produces:
+
+~~~mermaid
+flowchart LR
+  main[main branch]
+  tag[Existing version tag]
+  subgraph releasewf [release workflow]
+    validate[validate]
+    image[build-bff-docker]
+    rel[create-release]
+  end
+  subgraph pageswf [pages workflow]
+    demo["build:demo + verify"]
+  end
+  ghcr[(GHCR bff image)]
+  ghr[GitHub Release]
+  site[GitHub Pages demo]
+  tag -->|manual dispatch| validate
+  validate -->|verify gate passed| image
+  image -->|"smoke test, docker push"| ghcr
+  validate --> rel
+  image --> rel
+  rel --> ghr
+  main -->|manual dispatch| demo
+  demo -->|deploy-pages| site
+~~~
+
+`validate` checks that the tag is on `main`, that versions and changelog
+match, and runs `scripts/verify-production-ready.sh`. `build-bff-docker` builds
+[apps/api/Dockerfile](../apps/api/Dockerfile), smoke-tests it with
+[scripts/smoke-api-image.mjs](../scripts/smoke-api-image.mjs), and pushes only
+after that passes. The client has no pipeline here: EAS builds and store
+submission belong to the adopting institution. See
+[.github/workflows/release.yml](../.github/workflows/release.yml) and
+[.github/workflows/pages.yml](../.github/workflows/pages.yml).
+
 The release workflow runs its image and release jobs separately, so publication
 is not atomic. After a failed run, check GHCR and GitHub Releases independently.
 Stable tags also move the `latest` tag; prerelease tags do not.

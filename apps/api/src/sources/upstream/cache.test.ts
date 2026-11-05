@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cacheStats, clearCache, destroyCache, getCached } from "./cache";
+import { cacheStats, clearCache, destroyCache, getCached, ttlUnlessDegraded } from "./cache";
 
 afterEach(() => {
   clearCache();
@@ -64,16 +64,42 @@ describe("getCached", () => {
     expect(oldestLoader).toHaveBeenCalledOnce();
   });
 
-  it("returns but does not retain values excluded by the admission policy", async () => {
-    const loader = vi.fn()
-      .mockResolvedValueOnce({ data: "partial", degraded: true })
-      .mockResolvedValueOnce({ data: "current", degraded: false });
-    const shouldCache = (value: { degraded: boolean }) => !value.degraded;
+  it("keeps degraded values for 60 seconds and healthy values for the full TTL", async () => {
+    vi.useFakeTimers();
+    const ttlFor = ttlUnlessDegraded(300_000);
+    const degraded = vi.fn(async () => ({ degraded: true }));
+    const healthy = vi.fn(async () => ({ degraded: false }));
 
-    await expect(getCached("degraded", loader, 1_000, { shouldCache })).resolves.toEqual({ data: "partial", degraded: true });
-    await expect(getCached("degraded", loader, 1_000, { shouldCache })).resolves.toEqual({ data: "current", degraded: false });
-    await expect(getCached("degraded", loader, 1_000, { shouldCache })).resolves.toEqual({ data: "current", degraded: false });
+    await getCached("degraded", degraded, 300_000, { ttlFor });
+    await getCached("healthy", healthy, 300_000, { ttlFor });
+    vi.advanceTimersByTime(59_999);
+    await getCached("degraded", degraded, 300_000, { ttlFor });
+    await getCached("healthy", healthy, 300_000, { ttlFor });
+    expect(degraded).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    await getCached("degraded", degraded, 300_000, { ttlFor });
+    await getCached("healthy", healthy, 300_000, { ttlFor });
+    expect(degraded).toHaveBeenCalledTimes(2);
+    expect(healthy).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(240_000);
+    await getCached("healthy", healthy, 300_000, { ttlFor });
+    expect(healthy).toHaveBeenCalledTimes(2);
+  });
 
+  it("never lets the degraded TTL exceed a shorter normal TTL", async () => {
+    vi.useFakeTimers();
+    const loader = vi.fn(async () => ({ degraded: true }));
+    const ttlFor = ttlUnlessDegraded(1_000);
+    await getCached("short", loader, 1_000, { ttlFor });
+    vi.advanceTimersByTime(1_000);
+    await getCached("short", loader, 1_000, { ttlFor });
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
+
+  it("stores nothing when ttlFor returns 0", async () => {
+    const loader = vi.fn(async () => "value");
+    await getCached("zero", loader, 1_000, { ttlFor: () => 0 });
+    await getCached("zero", loader, 1_000, { ttlFor: () => 0 });
     expect(loader).toHaveBeenCalledTimes(2);
   });
 

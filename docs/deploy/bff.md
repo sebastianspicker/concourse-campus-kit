@@ -31,9 +31,11 @@ the same internal port, for example `-p 4100:4100 -e BFF_PORT=4100`.
   layers.
 - The health check can send `BFF_AUTH_TOKEN` when the optional bearer guard is
   enabled. `/health` does not prove that external sources are reachable.
-- Leave `BFF_TRUST_PROXY=never` unless the network boundary has been reviewed.
-  Prefer exact `BFF_TRUSTED_PROXIES` IP/CIDR values; `always` is unsafe for an
-  exposed API unless a trusted edge replaces forwarding headers.
+- Leave `BFF_TRUST_PROXY` unset (it defaults to `never`) unless the network
+  boundary has been reviewed. Behind a reverse proxy, set exact
+  `BFF_TRUSTED_PROXIES` IP/CIDR values and keep `BFF_TRUST_PROXY` unset: the API
+  refuses to start when both are set. `always` is unsafe for an exposed API
+  unless a trusted edge replaces forwarding headers.
 - Confirm the source URLs are public and reachable from the deployed API host.
   Do not deploy credentials or protected-source configuration with this
   repository.

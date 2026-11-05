@@ -26,6 +26,7 @@ function institution(id: string, schedules: Array<{ label: string; url: string }
     name: "Example University",
     type: "university",
     campuses: [],
+    timezone: "Europe/Berlin",
     publicSources: { schedules }
   };
 }

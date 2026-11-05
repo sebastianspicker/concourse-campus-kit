@@ -21,7 +21,9 @@ looks for `<article>` elements first, then elements whose `class` contains
 `event`, then plain links. Each entry needs a title (`data-event-title`, the
 first `h2`, `h3`, or link text), a public link (`data-event-url` or the first
 `href`), and a date: a `datetime="…"` attribute, such as on `<time>`, or a
-`dd.mm.yyyy` date with an optional `hh:mm` time, read in the pack's time zone.
+`dd.mm.yyyy` date with an optional `hh:mm` time. A `datetime` without an offset
+and every `dd.mm.yyyy` date are read in the pack's time zone. HTML entities in
+titles and links (`&amp;`, `&szlig;`, numeric references) are decoded.
 Entries without a date are skipped. Each page contributes at most 8 events, and
 `/events` returns the events of all pages together.
 
@@ -30,13 +32,19 @@ Entries without a date are skipped. Each page contributes at most 8 events, and
 - Fetches have bounded timeouts, and failures are logged with request context.
 - If at least one event or schedule source succeeds, the API can return partial
   data with `_degraded: true`.
-- Degraded source results are not inserted into the API's in-process source
-  cache. A successful HTTP response still carries private cache headers, so the
+- Degraded source results stay in the API's in-process source cache for at most
+  60 seconds, so one broken source cannot multiply requests to the university
+  site. A successful HTTP response still carries private cache headers, so the
   client may persist a validated degraded response for bounded offline use.
 - If configured event pages yield no parsed events, the events adapter returns
   source-label fallback records with `_degraded: true`. If every configured
   schedule source fails, the API returns a sanitized error.
 - ICS recurrence expansion is bounded by `RRULE_EXPANSION_HORIZON_DAYS`.
+- ICS times without a zone (floating times), all-day dates, and `TZID` names
+  that are not IANA zones (such as Outlook's `W. Europe Standard Time`) are read
+  in the pack's time zone. All-day entries start at local midnight.
+- Moved occurrences (`RECURRENCE-ID`) replace their original slot, and
+  `STATUS:CANCELLED` events and occurrences are left out.
 - `/schedule` returns at most 1000 occurrences across all feeds. When the feeds
   together hold more, upcoming occurrences are kept first, so a query for a
   past range can miss occurrences; `_total` counts the retained occurrences

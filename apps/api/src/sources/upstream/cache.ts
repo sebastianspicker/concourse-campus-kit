@@ -78,11 +78,12 @@ function getAdmittedInFlight<T>(key: string): Promise<T> | undefined {
   return undefined;
 }
 
-async function loadAndStore<T>(key: string, loader: CacheLoader<T>, ttlMs: number, controller: AbortController, shouldCache: (value: T) => boolean): Promise<T> {
+async function loadAndStore<T>(key: string, loader: CacheLoader<T>, controller: AbortController, ttlFor: (value: T) => number): Promise<T> {
   const value = await loader(controller.signal);
-  if (!controller.signal.aborted && shouldCache(value)) {
+  const valueTtlMs = ttlFor(value);
+  if (!controller.signal.aborted && valueTtlMs > 0) {
     const storedAt = Date.now();
-    cache.set(key, { value, expiresAt: storedAt + ttlMs, lastAccessedAt: storedAt });
+    cache.set(key, { value, expiresAt: storedAt + valueTtlMs, lastAccessedAt: storedAt });
     evictIfOverCap();
   }
   return value;
@@ -126,11 +127,18 @@ function releaseInFlightWhenSettled(key: string, entry: InFlightEntry, work: Pro
   );
 }
 
+const DEGRADED_TTL_MS = 60_000;
+
+/** Keeps partial results briefly so a failing upstream is not hit on every request. */
+export function ttlUnlessDegraded(ttlMs: number): (result: { degraded: boolean }) => number {
+  return (result) => (result.degraded ? Math.min(ttlMs, DEGRADED_TTL_MS) : ttlMs);
+}
+
 /**
- * Returns a cached value or shares one in-flight load; callers may reject
- * successful values from caching without changing the returned result.
+ * Returns a cached value or shares one in-flight load; `ttlFor` may shorten a
+ * value's lifetime (0 stores nothing) without changing the returned result.
  */
-export async function getCached<T>(key: string, loader: CacheLoader<T>, ttlMs: number, options?: { inFlightTimeoutMs?: number; force?: boolean; shouldCache?: (value: T) => boolean }): Promise<T> {
+export async function getCached<T>(key: string, loader: CacheLoader<T>, ttlMs: number, options?: { inFlightTimeoutMs?: number; force?: boolean; ttlFor?: (value: T) => number }): Promise<T> {
   const cached = getCachedEntry<T>(key, options?.force);
   if (cached) return cached.value;
 
@@ -140,9 +148,9 @@ export async function getCached<T>(key: string, loader: CacheLoader<T>, ttlMs: n
 
   const controller = new AbortController();
   const timeoutMs = options?.inFlightTimeoutMs ?? DEFAULT_IN_FLIGHT_TIMEOUT_MS;
-  const shouldCache = options?.shouldCache ?? (() => true);
+  const ttlFor = options?.ttlFor ?? (() => ttlMs);
   const entry: InFlightEntry = { controller, promise: Promise.resolve() };
-  const work = loadAndStore(key, loader, ttlMs, controller, shouldCache);
+  const work = loadAndStore(key, loader, controller, ttlFor);
   entry.promise = withInFlightTimeout(work, controller, timeoutMs);
   inFlight.set(key, entry);
   releaseInFlightWhenSettled(key, entry, work);

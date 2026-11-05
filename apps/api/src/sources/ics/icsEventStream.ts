@@ -1,6 +1,7 @@
 /** Streams bounded, validated VEVENT property maps from untrusted ICS text. */
 
 import type { IcsDateProperty } from "./recurrenceRules";
+import { isKnownTimeZone } from "../time";
 import { MAX_ICS_LOGICAL_LINE_LENGTH, scanUnfoldedLines, type ScannedIcsLine } from "./icsLineScanner";
 
 export type IcsPropertyMap = Record<string, IcsDateProperty>;
@@ -16,7 +17,7 @@ const MAX_ICS_PROPERTIES_PER_EVENT = 1_024;
 const MAX_ICS_EVENT_PROPERTY_BYTES = 256 * 1024;
 const MAX_ICS_EXDATES_PER_EVENT = 512;
 const MAX_ICS_EXDATE_BYTES = 64 * 1024;
-const KNOWN_PROPERTIES = ["UID", "SUMMARY", "DTSTART", "DTEND", "LOCATION", "X-CAMPUS-ID", "X-CAMPUS", "DESCRIPTION", "RRULE", "EXDATE"];
+const KNOWN_PROPERTIES = ["UID", "SUMMARY", "DTSTART", "DTEND", "LOCATION", "X-CAMPUS-ID", "X-CAMPUS", "DESCRIPTION", "RRULE", "EXDATE", "RECURRENCE-ID", "STATUS"];
 
 const MAX_ICS_PARAMETERS_PER_PROPERTY = 64;
 
@@ -63,9 +64,26 @@ function setTimeZoneParam(params: Record<string, string>, segment: ParameterSegm
   params.TZID = segment.value.replace(/^"(.*)"$/, "$1");
 }
 
-/** Visits only bounded, structurally valid VEVENTs from an untrusted ICS document. */
-export function forEachValidIcsEvent(ics: string, onEvent: (event: EventAccumulator) => void): void {
-  const stream = new IcsEventStream(onEvent);
+const HAS_OFFSET_PATTERN = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+/** RFC 5545 floating values and unknown (e.g. Windows) TZIDs fall back to the institution zone. */
+const applyDefaultZone = (property: IcsDateProperty | undefined, timeZone: string): void => {
+  if (!property || HAS_OFFSET_PATTERN.test(property.value)) return;
+  const tzid = property.params.TZID;
+  if (!tzid || !isKnownTimeZone(tzid)) property.params.TZID = timeZone;
+};
+
+/** Zones every date property of one VEVENT before any consumer parses it. */
+const applyDefaultZones = (event: EventAccumulator, timeZone: string): void => {
+  const { current } = event;
+  [current.DTSTART, current.DTEND, current["RECURRENCE-ID"], ...event.exdates].forEach((property) => applyDefaultZone(property, timeZone));
+};
+
+/** Visits only bounded, structurally valid VEVENTs; zoneless dates take `defaultTimeZone` when given. */
+export function forEachValidIcsEvent(ics: string, onEvent: (event: EventAccumulator) => void, defaultTimeZone?: string): void {
+  const stream = new IcsEventStream(defaultTimeZone
+    ? (event) => { applyDefaultZones(event, defaultTimeZone); onEvent(event); }
+    : onEvent);
   for (const scannedLine of scanUnfoldedLines(ics)) stream.accept(scannedLine);
 }
 

@@ -5,7 +5,7 @@ import {
 } from "../time";
 
 const ICS_DATE_TIME_PATTERN = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z|[+-]\d{4}|[+-]\d{2}:\d{2})?$/;
-const FLOATING_DATE_TIME_PATTERN = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?$/;
+const FLOATING_DATE_TIME_PATTERN = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?)?$/;
 
 export type CalendarParts = {
   year: number;
@@ -74,11 +74,13 @@ function calendarPartsFromIcsValues(values: IcsDateTimeValues): CalendarParts {
   };
 }
 
-/** Parses an all-day ICS value only when it contains a valid calendar date. */
-function parseAllDayIcsDate(value: string): string | undefined {
+/** Parses an all-day ICS value as local midnight in its zone, or UTC midnight without one. */
+function parseAllDayIcsDate(value: string, timeZone: string | undefined): string | undefined {
   if (!/^\d{8}$/.test(value)) return undefined;
   const [year, month, day] = [value.slice(0, 4), value.slice(4, 6), value.slice(6, 8)];
-  validateDateParts(calendarPartsFromIcsValues({ year, month, day }));
+  const parts = calendarPartsFromIcsValues({ year, month, day });
+  validateDateParts(parts);
+  if (timeZone) return parseDateTimeInTimeZone(parts, timeZone);
   return validIsoDate(`${year}-${month}-${day}T00:00:00.000Z`, value);
 }
 
@@ -98,7 +100,7 @@ function resolveIcsDateTime(resolution: IcsDateTimeResolution): string {
 
 /** Converts an ICS date or timestamp to an ISO instant, validating calendar values first. */
 export function parseIcsDate(value: string, timeZone?: string): string {
-  const allDayDate = parseAllDayIcsDate(value);
+  const allDayDate = parseAllDayIcsDate(value, timeZone);
   if (allDayDate) return allDayDate;
 
   const match = value.match(ICS_DATE_TIME_PATTERN);
@@ -122,7 +124,7 @@ export function parseIcsDate(value: string, timeZone?: string): string {
   });
 }
 
-/** Parses a floating ICS timestamp without applying a time-zone offset. */
+/** Parses a floating ICS timestamp or date without applying a time-zone offset. */
 export function floatingDateFromIcsValue(value: string): Date {
   const match = value.match(FLOATING_DATE_TIME_PATTERN);
   if (!match) throw new Error(`Invalid floating ICS date: ${value}`);

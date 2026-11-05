@@ -1,11 +1,11 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const baseUrl = process.env.CONCOURSE_DEMO_URL ?? "http://127.0.0.1:8082/concourse-campus-kit";
-const outputRoot = resolve(root, process.env.CONCOURSE_SCREENSHOT_DIR ?? "docs/screenshots");
+const outputRoot = resolve(root, "docs/screenshots");
 
 const profiles = {
   desktop: { width: 1440, height: 960 },
@@ -23,7 +23,7 @@ const shots = [
   { name: "settings", path: "/settings", wait: "text=Appearance" },
 ];
 
-const requested = (process.env.CONCOURSE_SCREENSHOTS ?? Object.keys(profiles).join(",")).split(",").map((value) => value.trim()).filter(Boolean);
+const requested = (process.env.CONCOURSE_SCREENSHOTS || "desktop,mobile").split(",").map((value) => value.trim()).filter(Boolean);
 
 async function capture() {
   const browser = await chromium.launch();
@@ -47,10 +47,6 @@ async function capture() {
   } finally {
     await browser.close();
   }
-}
-
-if (process.env.CONCOURSE_SCREENSHOTS_CLEAN === "1") {
-  await rm(outputRoot, { recursive: true, force: true });
 }
 
 await capture();

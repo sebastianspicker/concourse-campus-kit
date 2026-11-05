@@ -15,13 +15,6 @@ export function getStringParam(params: URLSearchParams, key: string): string | u
   return params.get(key) ?? undefined;
 }
 
-function getNumberParam(params: URLSearchParams, key: string): number | undefined {
-  const value = params.get(key);
-  if (value === null) return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 function getBoundedLimitParam(params: URLSearchParams, key: string): number | undefined {
   const value = params.get(key);
   if (value === null) return undefined;
@@ -36,7 +29,18 @@ function getDateParam(params: URLSearchParams, key: string): Date | undefined {
   const value = params.get(key);
   if (value === null) return undefined;
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date;
+  if (Number.isNaN(date.getTime())) throw new InvalidQueryParameterError(`${key} must be an ISO 8601 date-time`);
+  return date;
+}
+
+function getOffsetParam(params: URLSearchParams): number {
+  const value = params.get(PublicQueryKey.offset);
+  if (value === null) return 0;
+  const parsed = Number(value);
+  if (!/^\d{1,15}$/.test(value) || !Number.isSafeInteger(parsed)) {
+    throw new InvalidQueryParameterError("offset must be a non-negative integer");
+  }
+  return parsed;
 }
 
 function parseDateRangePaginationQuery(params: URLSearchParams): EventsQuery {
@@ -45,7 +49,7 @@ function parseDateRangePaginationQuery(params: URLSearchParams): EventsQuery {
     fromDate: getDateParam(params, PublicQueryKey.from),
     toDate: getDateParam(params, PublicQueryKey.to),
     limit: getBoundedLimitParam(params, PublicQueryKey.limit),
-    offset: Math.max(0, Math.floor(getNumberParam(params, PublicQueryKey.offset) ?? 0))
+    offset: getOffsetParam(params)
   };
 }
 
@@ -62,6 +66,6 @@ export function parseRoomsQuery(params: URLSearchParams): RoomsQuery {
     campus: getStringParam(params, PublicQueryKey.campus)?.slice(0, 100),
     search: getStringParam(params, PublicQueryKey.search)?.slice(0, 200),
     limit: getBoundedLimitParam(params, PublicQueryKey.limit),
-    offset: Math.max(0, Math.floor(getNumberParam(params, PublicQueryKey.offset) ?? 0))
+    offset: getOffsetParam(params)
   };
 }

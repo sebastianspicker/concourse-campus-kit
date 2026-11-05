@@ -3,7 +3,7 @@ import type { InstitutionPack } from "@concourse/institutions";
 import { isPublicHttpUrl, type PublicEvent } from "@concourse/contracts";
 import { log } from "../../runtime/logger";
 import { parseDateTimeInTimeZone } from "../time";
-import { getCached } from "../upstream/cache";
+import { getCached, ttlUnlessDegraded } from "../upstream/cache";
 import { getPublicSourceBreaker } from "../upstream/circuitBreaker";
 import { fetchTextWithTimeout } from "../upstream/httpClient";
 
@@ -30,7 +30,6 @@ function buildEventId(input: EventIdInput): string {
   return `evt_${hash}`;
 }
 
-const DEFAULT_TIME_ZONE = "Europe/Berlin";
 const MAX_EVENTS_PER_SOURCE = 8;
 const MAX_HTML_BLOCKS_TO_INSPECT = 256;
 const MAX_HTML_OPENING_TAG_LENGTH = 16 * 1024;
@@ -78,7 +77,7 @@ export async function fetchPublicEvents(
       }
 
       let anyFailed = hasRejectedSource;
-      const timeZone = institution.timezone ?? DEFAULT_TIME_ZONE;
+      const timeZone = institution.timezone;
       const settledSources = await Promise.allSettled(
         sources.map(async (source) => {
           const html = await getPublicSourceBreaker("public-events", source.url).call(() => fetchTextWithTimeout(source.url, { signal }));
@@ -112,7 +111,7 @@ export async function fetchPublicEvents(
       return degradedResult;
     },
     ttlMs,
-    { shouldCache: (result) => !result.degraded }
+    { ttlFor: ttlUnlessDegraded(ttlMs) }
   );
 }
 
@@ -266,7 +265,28 @@ const HTML_DATETIME_PATTERN = /datetime="([^"]+)"/i;
 const GERMAN_DATE_TIME_PATTERN = /(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2}):(\d{2})/;
 const GERMAN_DATE_PATTERN = /(\d{2})\.(\d{2})\.(\d{4})/;
 
-function parseHtmlDateTime(value: string): string | null {
+const ZONELESS_DATETIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?)?$/;
+
+/** Reads a datetime without an offset in the institution zone; values with an offset keep native parsing. */
+function parseHtmlDateTime(value: string, timeZone: string): string | null {
+  const match = ZONELESS_DATETIME_PATTERN.exec(value.trim());
+  if (match) {
+    try {
+      return parseDateTimeInTimeZone(
+        {
+          year: Number(match[1]),
+          month: Number(match[2]),
+          day: Number(match[3]),
+          hour: Number(match[4] ?? 0),
+          minute: Number(match[5] ?? 0),
+          second: Number(match[6] ?? 0)
+        },
+        timeZone
+      );
+    } catch {
+      return null;
+    }
+  }
   const parsed = new Date(value);
   return Number.isNaN(parsed.valueOf()) ? null : parsed.toISOString();
 }
@@ -305,7 +325,7 @@ function parseMatchedGermanDate(match: RegExpMatchArray, timeZone: string): stri
 function extractDate(block: string, timeZone: string): string | null {
   const datetimeMatch = block.match(HTML_DATETIME_PATTERN);
   if (datetimeMatch) {
-    const parsed = parseHtmlDateTime(datetimeMatch[1]);
+    const parsed = parseHtmlDateTime(datetimeMatch[1], timeZone);
     if (parsed) {
       return parsed;
     }
@@ -408,7 +428,7 @@ function getDoubleQuotedAttribute(openingTag: string, attributeName: string): st
     if (matchesName && (start === 0 || preceding === "<" || /\s/.test(preceding))) {
       const valueStart = start + needle.length;
       const valueEnd = openingTag.indexOf('"', valueStart);
-      return valueEnd < 0 ? null : openingTag.slice(valueStart, valueEnd);
+      return valueEnd < 0 ? null : decodeEntities(openingTag.slice(valueStart, valueEnd));
     }
   }
   return null;
@@ -431,7 +451,23 @@ function normalizeVisibleText(value: string): string {
     if (close === null) { text += value.slice(open); break; }
     cursor = close + 1;
   }
-  return text.replace(/\s+/g, " ").trim();
+  return decodeEntities(text).replace(/\s+/g, " ").trim();
+}
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", ndash: "\u2013", mdash: "\u2014",
+  hellip: "\u2026", auml: "\u00e4", ouml: "\u00f6", uuml: "\u00fc", Auml: "\u00c4", Ouml: "\u00d6",
+  Uuml: "\u00dc", szlig: "\u00df", euro: "\u20ac"
+};
+
+/** Decodes common named and numeric references in one pass; unknown or invalid ones stay as written. */
+function decodeEntities(value: string): string {
+  return value.replace(/&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|([A-Za-z]{2,8}));/g, (whole, dec, hex, name) => {
+    if (name) return NAMED_ENTITIES[name] ?? whole;
+    const code = dec ? Number(dec) : parseInt(hex, 16);
+    const valid = code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
+    return valid ? String.fromCodePoint(code) : whole;
+  });
 }
 
 function safeResolveUrl(href: string, sourceUrl: string): string | null {

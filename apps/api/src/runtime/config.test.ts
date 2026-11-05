@@ -91,8 +91,17 @@ describe("BFF proxy trust configuration", () => {
     expect(env.trustedProxyMatcher.isTrusted("11.1.2.3")).toBe(false);
   });
 
-  it("lets an explicit mode override implicit trusted mode", () => {
-    expect(load({ BFF_TRUST_PROXY: "never", BFF_TRUSTED_PROXIES: "10.0.0.0/8" }).trustProxy).toBe("never");
+  it.each(["never", "always"])("rejects BFF_TRUST_PROXY=%s together with BFF_TRUSTED_PROXIES", (mode) => {
+    expect(() => load({ BFF_TRUST_PROXY: mode, BFF_TRUSTED_PROXIES: "10.0.0.0/8" }))
+      .toThrow("BFF_TRUSTED_PROXIES is ignored while BFF_TRUST_PROXY is set; remove BFF_TRUST_PROXY to use the allowlist");
+  });
+
+  it("treats an empty BFF_TRUST_PROXY as unset", () => {
+    expect(load({ BFF_TRUST_PROXY: "", BFF_TRUSTED_PROXIES: "10.0.0.0/8" }).trustProxy).toBe("trusted");
+  });
+
+  it("defaults to never with neither variable", () => {
+    expect(load({}).trustProxy).toBe("never");
   });
 
   it.each(["not-an-ip", "10.0.0.0/33", "10.0.0.0/8/8", "::1/129", "10.0.0.0/x"])("rejects BFF_TRUSTED_PROXIES entry %s", (entry) => {

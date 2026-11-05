@@ -18,16 +18,6 @@ function formatUptime(ms: number): string {
   return `${seconds}s`;
 }
 
-function getMemoryStatus(): { status: string; usedMB: number; totalMB: number } {
-  const memUsage = process.memoryUsage();
-  const usedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
-  const totalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
-  
-  const status = memUsage.heapUsed / memUsage.heapTotal > 0.9 ? "warning" : "ok";
-  
-  return { status, usedMB, totalMB };
-}
-
 export type HealthDependencies = {
   config: Pick<BffConfig, "institutionId" | "appVersion">;
   institutionLoader: (institutionId: string) => InstitutionPack;
@@ -58,15 +48,6 @@ export async function handleHealth(
     });
   }
 
-  const memory = getMemoryStatus();
-  checks.memory = { 
-    status: memory.status,
-    ...(memory.status === "warning" ? { message: `High memory usage: ${memory.usedMB}MB / ${memory.totalMB}MB` } : {})
-  };
-  if (memory.status === "warning" && overallStatus === "ok") {
-    overallStatus = "warning";
-  }
-
   const response = {
     status: overallStatus,
     version: config.appVersion,
@@ -75,7 +56,7 @@ export async function handleHealth(
     checks
   };
 
-  const statusCode = overallStatus === "ok" ? 200 : overallStatus === "warning" ? 200 : 503;
+  const statusCode = overallStatus === "ok" ? 200 : 503;
   res.writeHead(statusCode, { "content-type": "application/json" });
   res.end(JSON.stringify(response));
 }

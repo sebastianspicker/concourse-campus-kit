@@ -215,4 +215,30 @@ describe("fetchPublicEvents", () => {
     expect(result.events).toEqual([expect.objectContaining({ title: "Valid date", date: "2026-11-12T18:30:00.000Z" })]);
     expect(log).not.toHaveBeenCalled();
   });
+
+  it("reads an offset-less datetime in the pack zone and decodes entities (T-8)", async () => {
+    fetchTextWithTimeout.mockResolvedValueOnce(`
+      <article><h3>Konzert &amp; Lesung</h3><a href="/e?id=7&amp;lang=de">Mehr</a>
+        <time datetime="2026-11-05T19:30">5. November</time></article>`);
+
+    const result = await fetchPublicEvents(institution("entities-zone", "https://www.example.org/events"), OPTIONS);
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]?.title).toBe("Konzert & Lesung");
+    expect(result.events[0]?.sourceUrl.endsWith("/e?id=7&lang=de")).toBe(true);
+    expect(result.events[0]?.date).toBe("2026-11-05T18:30:00.000Z");
+  });
+
+  it("handles date-only values and named and numeric references (T-9)", async () => {
+    fetchTextWithTimeout.mockResolvedValueOnce(`
+      <article><h3>Gro&szlig;er Saal</h3><a href="/a">x</a><time datetime="2026-11-05">5. November</time></article>
+      <article><h3>A &#8211; B &#x2013; C &bogus; &#0;</h3><a href="/b">x</a><time datetime="2026-11-06T10:00:00+01:00">6. November</time></article>`);
+
+    const result = await fetchPublicEvents(institution("entities-date", "https://www.example.org/events"), OPTIONS);
+
+    expect(result.events.map((event) => [event.title, event.date])).toEqual([
+      ["Großer Saal", "2026-11-04T23:00:00.000Z"],
+      ["A – B – C &bogus; &#0;", "2026-11-06T09:00:00.000Z"]
+    ]);
+  });
 });

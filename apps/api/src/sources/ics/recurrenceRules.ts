@@ -35,6 +35,7 @@ export type RecurrenceExpansionOptions = {
 export type RecurrencePreflightOptions = Pick<RecurrenceExpansionOptions, "dtStart" | "horizonDays" | "maxInstances" | "referenceDate">;
 
 const RRULE_PREFIX = "RRULE:";
+const ALL_DAY_VALUE_PATTERN = /^\d{8}$/;
 const EXPLICIT_BY_RULE_PART = /(?:^|;)BY[A-Z]+=/i;
 const UTC_UNTIL_PATTERN = /(?:^|;)UNTIL=[^;]+Z(?:;|$)/i;
 const MAX_RRULE_WORK_PER_EVENT = 10_000;
@@ -268,15 +269,31 @@ function expandOccurrences(window: OccurrenceWindow): Date[] {
 }
 
 /** Derives a stable identifier for one expanded occurrence from its start instant. */
-function instanceId(baseId: string, startsAt: string): string {
-  // This is intentionally local to recurrence expansion: the base id remains
-  // stable while every expanded occurrence gets an independently routable key.
+export function instanceId(baseId: string, startsAt: string): string {
+  // The base id remains stable while every expanded occurrence gets an
+  // independently routable key; RECURRENCE-ID overrides reuse it for their slot.
   return createHash("sha256").update(`${baseId}|${startsAt}`).digest("hex").slice(0, 16);
 }
 
-/** Maps recurrence instants to event copies while preserving duration and local time. */
-function mapOccurrences(baseEvent: ParsedIcsEvent, occurrences: Date[], timeZone?: string): ParsedIcsEvent[] {
-  const duration = baseEvent.endsAt ? Date.parse(baseEvent.endsAt) - Date.parse(baseEvent.startsAt) : 0;
+/** Measures a duration on the zone's wall clock, so a day-long entry stays a calendar day across DST. */
+function wallClockDuration(baseEvent: ParsedIcsEvent, timeZone?: string): number {
+  if (!baseEvent.endsAt) return 0;
+  const [start, end] = [new Date(baseEvent.startsAt), new Date(baseEvent.endsAt)];
+  return timeZone
+    ? instantToFloatingDate(end, timeZone).getTime() - instantToFloatingDate(start, timeZone).getTime()
+    : end.getTime() - start.getTime();
+}
+
+/** Ends an occurrence after the base duration, applied to its wall-clock start when the series is zoned. */
+function occurrenceEnd(occurrence: Date, instant: Date, duration: number, timeZone?: string): string {
+  const end = timeZone ? floatingDateToInstant(new Date(occurrence.getTime() + duration), timeZone) : new Date(instant.getTime() + duration);
+  return end.toISOString();
+}
+
+/** Maps recurrence instants to event copies; all-day series keep calendar-day durations, timed ones exact durations (RFC 5545). */
+function mapOccurrences(baseEvent: ParsedIcsEvent, occurrences: Date[], timeZone: string | undefined, allDay: boolean): ParsedIcsEvent[] {
+  const durationZone = allDay ? timeZone : undefined;
+  const duration = wallClockDuration(baseEvent, durationZone);
   return occurrences.sort((a, b) => a.getTime() - b.getTime()).map((occurrence) => {
     const instant = timeZone ? floatingDateToInstant(occurrence, timeZone) : occurrence;
     const startsAt = instant.toISOString();
@@ -285,7 +302,7 @@ function mapOccurrences(baseEvent: ParsedIcsEvent, occurrences: Date[], timeZone
       ...baseEvent,
       id: recurringInstanceId,
       startsAt,
-      endsAt: duration > 0 ? new Date(instant.getTime() + duration).toISOString() : baseEvent.endsAt,
+      endsAt: duration > 0 ? occurrenceEnd(occurrence, instant, duration, durationZone) : baseEvent.endsAt,
       isRecurring: true,
       recurringInstanceId
     };
@@ -371,7 +388,8 @@ export function expandRecurringEvent(baseEvent: ParsedIcsEvent, ruleValue: strin
         includePast,
         pastLimit: limit
       }),
-      window.timeZone
+      window.timeZone,
+      ALL_DAY_VALUE_PATTERN.test(options.dtStart.value.trim())
     );
   } catch {
     return fallback(baseEvent, exdates, startDate);

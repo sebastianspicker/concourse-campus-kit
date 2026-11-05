@@ -1,6 +1,5 @@
 import {
   createTrustedProxyMatcher,
-  validateTrustedProxyRanges,
   type TrustedProxyMatcher,
   type TrustProxyMode
 } from "../security/proxyTrust";
@@ -86,16 +85,14 @@ function parseCsv(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
-function parseTrustedProxies(raw: string | undefined): string[] {
-  const trustedProxies = parseCsv(raw);
-  validateTrustedProxyRanges(trustedProxies);
-  return trustedProxies;
-}
-
-/** Enables range-based trust implicitly only when ranges exist and no mode overrides them. */
+/** Enables range-based trust only when no explicit mode exists; a mode plus ranges is ambiguous, so it fails startup. */
 function resolveTrustProxyMode(rawMode: string | undefined, trustedProxies: string[]): TrustProxyMode {
-  const mode = parseTrustProxy(rawMode);
-  return rawMode === undefined && trustedProxies.length > 0 ? "trusted" : mode;
+  const explicit = rawMode?.trim() ? rawMode : undefined;
+  if (explicit === undefined) return trustedProxies.length > 0 ? "trusted" : "never";
+  if (trustedProxies.length > 0) {
+    throw new Error("BFF_TRUSTED_PROXIES is ignored while BFF_TRUST_PROXY is set; remove BFF_TRUST_PROXY to use the allowlist");
+  }
+  return parseTrustProxy(explicit);
 }
 
 const AUTH_REQUIRED_VALUES = new Set(["1", "true", "yes", "on"]);
@@ -119,14 +116,15 @@ function parsePublicEventsDate(raw: string | undefined): Date | undefined {
 
 /** Parses the process environment once; auth settings stay representable so requests fail closed. */
 export function loadConfig(env: Env): BffConfig {
-  const trustedProxies = parseTrustedProxies(env.BFF_TRUSTED_PROXIES);
+  const trustedProxies = parseCsv(env.BFF_TRUSTED_PROXIES);
+  const trustedProxyMatcher = createTrustedProxyMatcher(trustedProxies);
   return {
     port: parsePort(env.BFF_PORT),
     institutionId: requireNonEmpty(env.INSTITUTION_ID, "INSTITUTION_ID"),
     corsOrigins: parseCsv(env.CORS_ORIGINS),
     trustProxy: resolveTrustProxyMode(env.BFF_TRUST_PROXY, trustedProxies),
     trustedProxies,
-    trustedProxyMatcher: createTrustedProxyMatcher(trustedProxies),
+    trustedProxyMatcher,
     defaultCacheTtl: parseIntInRange(env.BFF_DEFAULT_CACHE_TTL ?? "300", "BFF_DEFAULT_CACHE_TTL", 1, 86_400),
     rruleExpansionHorizonDays: parseIntInRange(env.RRULE_EXPANSION_HORIZON_DAYS ?? "90", "RRULE_EXPANSION_HORIZON_DAYS", 1, 366),
     rateLimitMax: parseIntInRange(env.BFF_RATE_LIMIT_MAX ?? "60", "BFF_RATE_LIMIT_MAX", 1, 100_000),

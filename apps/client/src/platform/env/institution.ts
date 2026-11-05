@@ -23,5 +23,5 @@ export function getInstitutionLocale(pack = getConfiguredInstitution()): "en" | 
 }
 
 export function getInstitutionTimeZone(pack = getConfiguredInstitution()): string {
-  return pack.timezone ?? "UTC";
+  return pack.timezone;
 }

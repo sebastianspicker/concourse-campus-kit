@@ -82,7 +82,7 @@ function useResourceState<T>() {
 
 /** Owns the active controller and routes only its mounted completion into resource state. */
 function useRequestOwner<T>(
-  loader: (options: { force?: boolean; signal?: AbortSignal }) => Promise<ResourceLoadResult<T>>,
+  loader: (options: { signal?: AbortSignal }) => Promise<ResourceLoadResult<T>>,
   acceptResult: (result: ResourceLoadResult<T>) => void,
   acceptError: (error: unknown) => void
 ) {
@@ -95,10 +95,10 @@ function useRequestOwner<T>(
     (controller: AbortController) => isCurrentRequest(mountedRef, controllerRef, controller),
     []
   );
-  const startLoad = useCallback((force: boolean): RequestController => {
+  const startLoad = useCallback((): RequestController => {
     const { controller, load } = replaceRequestController(
       controllerRef,
-      (signal) => loaderRef.current({ force, signal }),
+      (signal) => loaderRef.current({ signal }),
     );
     const promise = load
       .then((result) => {
@@ -132,7 +132,7 @@ function useKeyLoad<T>(
   useEffect(() => {
     owner.mount();
     operations.beginKeyLoad();
-    const { controller, promise } = owner.startLoad(false);
+    const { controller, promise } = owner.startLoad();
     void promise.finally(() => {
       if (owner.owns(controller)) operations.finishKeyLoad();
     });
@@ -140,14 +140,14 @@ function useKeyLoad<T>(
   }, [key, operations, owner]);
 }
 
-/** Starts a force refresh that takes ownership from any existing key-driven request. */
+/** Starts a refresh that takes ownership from any existing key-driven request. */
 function useRefresh<T>(
   operations: ReturnType<typeof useResourceState<T>>["operations"],
   owner: ReturnType<typeof useRequestOwner<T>>
 ): () => Promise<void> {
   return useCallback(async () => {
     operations.beginRefresh();
-    const { controller, promise } = owner.startLoad(true);
+    const { controller, promise } = owner.startLoad();
     try {
       await promise;
     } finally {
@@ -161,7 +161,7 @@ function useRefresh<T>(
  * newer navigation or refresh state.
  */
 export function usePublicResource<T>(
-  loader: (options: { force?: boolean; signal?: AbortSignal }) => Promise<ResourceLoadResult<T>>,
+  loader: (options: { signal?: AbortSignal }) => Promise<ResourceLoadResult<T>>,
   /** Serialized dependency key. When this changes, the hook re-fetches. */
   key?: string
 ): PublicResource<T> {

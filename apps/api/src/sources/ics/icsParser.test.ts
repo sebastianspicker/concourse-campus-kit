@@ -108,3 +108,106 @@ describe("parseIcs", () => {
     expect(ascending).toHaveLength(1_000);
   });
 });
+
+describe("parseIcs time zones and overrides", () => {
+  const berlin = (referenceDate: string, extra: Record<string, unknown> = {}) =>
+    ({ timeZone: "Europe/Berlin", referenceDate: new Date(referenceDate), ...extra });
+  const series = "UID:s\nSUMMARY:Lecture\nDTSTART;TZID=Europe/Berlin:20261102T100000\nRRULE:FREQ=WEEKLY;COUNT=3";
+  const moved = "UID:s\nSUMMARY:Lecture (moved)\nRECURRENCE-ID;TZID=Europe/Berlin:20261109T100000\nDTSTART;TZID=Europe/Berlin:20261110T140000";
+  const options = berlin("2026-11-01T00:00:00.000Z");
+
+  it("T-1/T-2: reads floating times in the pack zone in winter and summer", () => {
+    expect(parseIcs(calendar("UID:w\nSUMMARY:W\nDTSTART:20261105T190000"), berlin("2026-11-01T00:00:00.000Z"))[0].startsAt)
+      .toBe("2026-11-05T18:00:00.000Z");
+    expect(parseIcs(calendar("UID:s\nSUMMARY:S\nDTSTART:20260605T190000"), berlin("2026-05-01T00:00:00.000Z"))[0].startsAt)
+      .toBe("2026-06-05T17:00:00.000Z");
+  });
+
+  it("T-3: reads all-day dates as local midnight in the pack zone", () => {
+    const [event] = parseIcs(calendar("UID:d\nSUMMARY:D\nDTSTART;VALUE=DATE:20261105\nDTEND;VALUE=DATE:20261106"), options);
+    expect(event).toMatchObject({ startsAt: "2026-11-04T23:00:00.000Z", endsAt: "2026-11-05T23:00:00.000Z" });
+  });
+
+  it("T-4: replaces a moved occurrence with its override under the original slot id", () => {
+    const unmoved = parseIcs(calendar(series), options);
+    for (const events of [parseIcs(calendarOf([series, moved]), options), parseIcs(calendarOf([moved, series]), options)]) {
+      expect(events.map((event) => event.startsAt)).toEqual([
+        "2026-11-02T09:00:00.000Z", "2026-11-10T13:00:00.000Z", "2026-11-16T09:00:00.000Z"
+      ]);
+      expect(new Set(events.map((event) => event.id)).size).toBe(3);
+      expect(events[1]).toMatchObject({ title: "Lecture (moved)", id: unmoved[1].id });
+    }
+  });
+
+  it("T-5: drops cancelled occurrences, events and series", () => {
+    const cancelledSlot = "UID:s\nSUMMARY:Lecture\nSTATUS:CANCELLED\nRECURRENCE-ID;TZID=Europe/Berlin:20261116T100000\nDTSTART;TZID=Europe/Berlin:20261116T100000";
+    expect(parseIcs(calendarOf([series, moved, cancelledSlot]), options).map((event) => event.startsAt))
+      .toEqual(["2026-11-02T09:00:00.000Z", "2026-11-10T13:00:00.000Z"]);
+    expect(parseIcs(calendar("UID:c\nSUMMARY:Cancelled talk\nSTATUS:CANCELLED\nDTSTART:20261105T190000"), options)).toEqual([]);
+    expect(parseIcs(calendar(`${series}\nSTATUS:CANCELLED`), options)).toEqual([]);
+  });
+
+  it("T-6: falls back to the pack zone for a non-IANA TZID", () => {
+    const events = parseIcs(calendar("UID:o\nSUMMARY:O\nDTSTART;TZID=W. Europe Standard Time:20261105T190000"), options);
+    expect(events.map((event) => event.startsAt)).toEqual(["2026-11-05T18:00:00.000Z"]);
+  });
+
+  it("T-7: keeps an all-day series on its local day across DST", () => {
+    const starts = parseIcs(calendar("UID:m\nSUMMARY:M\nDTSTART;VALUE=DATE:20260701\nRRULE:FREQ=MONTHLY;COUNT=6"),
+      berlin("2026-06-01T00:00:00.000Z", { rruleHorizonDays: 366 })).map((event) => event.startsAt);
+    expect(starts).toContain("2026-06-30T22:00:00.000Z");
+    expect(starts).toContain("2026-10-31T23:00:00.000Z");
+  });
+
+  it("PA-8: decodes text escapes in one pass", () => {
+    const [event] = parseIcs(calendar("UID:e\nSUMMARY:a\\, b\\; c\\nd\nDTSTART:20261105T190000Z\nDESCRIPTION:C:\\\\new"));
+    expect(event.description).toBe("C:\\new");
+    expect(event.title).toBe("a, b; c\nd");
+  });
+});
+
+describe("parseIcs override and all-day edge cases", () => {
+  const options = { timeZone: "Europe/Berlin", referenceDate: new Date("2026-11-01T00:00:00.000Z") };
+
+  it("keeps an override with a malformed RECURRENCE-ID under a stable unique id", () => {
+    const events = parseIcs(calendarOf([
+      "UID:s\nSUMMARY:Lecture\nDTSTART;TZID=Europe/Berlin:20261102T100000\nRRULE:FREQ=WEEKLY;COUNT=2",
+      "UID:s\nSUMMARY:Moved\nRECURRENCE-ID:not-a-date\nDTSTART;TZID=Europe/Berlin:20261110T140000"
+    ]), options);
+    expect(events.map((event) => event.title)).toEqual(["Lecture", "Lecture", "Moved"]);
+    expect(new Set(events.map((event) => event.id)).size).toBe(3);
+  });
+
+  it("applies a UID's overridden slots to its first master only", () => {
+    const master = (title: string) => `UID:s\nSUMMARY:${title}\nDTSTART;TZID=Europe/Berlin:20261102T100000\nRRULE:FREQ=WEEKLY;COUNT=3`;
+    const moved = "UID:s\nSUMMARY:Moved\nRECURRENCE-ID;TZID=Europe/Berlin:20261109T100000\nDTSTART;TZID=Europe/Berlin:20261110T140000";
+    const slot = parseIcs(calendarOf([master("First"), master("Duplicate"), moved]), options)
+      .filter((event) => event.startsAt === "2026-11-09T09:00:00.000Z");
+    expect(slot.map((event) => event.title)).toEqual(["Duplicate"]);
+  });
+
+  it("expands a series whose only zone is a non-IANA TZID", () => {
+    const events = parseIcs(calendar("UID:win\nSUMMARY:Win\nDTSTART;TZID=W. Europe Standard Time:20261105T190000\nRRULE:FREQ=WEEKLY;COUNT=3"), options);
+    expect(events.map((event) => event.startsAt)).toEqual([
+      "2026-11-05T18:00:00.000Z", "2026-11-12T18:00:00.000Z", "2026-11-19T18:00:00.000Z"
+    ]);
+  });
+
+  it("keeps the exact duration of a timed zoned occurrence across the DST night", () => {
+    const events = parseIcs(calendar("UID:n\nSUMMARY:Night\nDTSTART;TZID=Europe/Berlin:20261017T220000\nDTEND;TZID=Europe/Berlin:20261018T040000\nRRULE:FREQ=WEEKLY;COUNT=2"),
+      { timeZone: "Europe/Berlin", referenceDate: new Date("2026-10-01T00:00:00.000Z") });
+    expect(events.map((event) => [event.startsAt, event.endsAt])).toEqual([
+      ["2026-10-17T20:00:00.000Z", "2026-10-18T02:00:00.000Z"],
+      ["2026-10-24T20:00:00.000Z", "2026-10-25T02:00:00.000Z"]
+    ]);
+  });
+
+  it("ends a zoned all-day occurrence at local midnight on a DST-change day", () => {
+    const events = parseIcs(calendar("UID:d\nSUMMARY:Day\nDTSTART;VALUE=DATE:20261024\nDTEND;VALUE=DATE:20261025\nRRULE:FREQ=DAILY;COUNT=2"),
+      { timeZone: "Europe/Berlin", referenceDate: new Date("2026-10-20T00:00:00.000Z") });
+    expect(events.map((event) => [event.startsAt, event.endsAt])).toEqual([
+      ["2026-10-23T22:00:00.000Z", "2026-10-24T22:00:00.000Z"],
+      ["2026-10-24T22:00:00.000Z", "2026-10-25T23:00:00.000Z"]
+    ]);
+  });
+});

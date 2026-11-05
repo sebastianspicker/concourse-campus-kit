@@ -24,12 +24,10 @@ function bearerTokensEqual(actual: string, expected: string): boolean {
 }
 
 /**
- * Validates the deployment-time bearer-auth configuration.
+ * Fails startup when optional authentication is configured incompletely.
  *
- * The request guard intentionally repeats these checks so every request
- * fails closed when authentication is invalid or incomplete.
+ * The request guard repeats these checks so every request fails closed.
  */
-/** Fails startup when optional authentication is configured incompletely. */
 export function validateAuthConfiguration(config: AuthConfig): void {
   if (config.authRequirement === "invalid") {
     throw new Error("BFF_REQUIRE_AUTH has an invalid value");

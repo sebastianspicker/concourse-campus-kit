@@ -32,7 +32,7 @@ export const InstitutionPackSchema = z.object({
     })
     .optional(),
   publicRooms: z.array(RoomSchema).optional(),
-  timezone: z.string().refine(isValidTimeZone, "Invalid IANA timezone").optional(),
+  timezone: z.string().refine(isValidTimeZone, "Invalid IANA timezone"),
   app: z
     .object({
       displayName: z.string().trim().min(1).optional(),
