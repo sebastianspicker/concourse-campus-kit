@@ -42,9 +42,12 @@ function useResourceState<T>() {
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [cacheAge, setCacheAge] = useState<number | null>(null);
   const dataRef = useRef<T | null>(null);
+  // True while the rows on screen belong to the previous key and the new key has not loaded yet.
+  const heldFromPreviousKey = useRef(false);
 
   const beginKeyLoad = useCallback(() => {
     const hasExistingData = dataRef.current !== null;
+    heldFromPreviousKey.current = hasExistingData;
     setLoading(!hasExistingData);
     setRefreshing(hasExistingData);
     setError(null);
@@ -55,6 +58,7 @@ function useResourceState<T>() {
   }, []);
   const acceptResult = useCallback((result: ResourceLoadResult<T>) => {
     dataRef.current = result.data;
+    heldFromPreviousKey.current = false;
     setData(result.data);
     setSource(result.source);
     setUpdatedAt(result.updatedAt);
@@ -63,7 +67,17 @@ function useResourceState<T>() {
   }, []);
   const acceptError = useCallback((error: unknown) => {
     const uiError = toUiError(error);
-    if (uiError !== null) setError(uiError);
+    if (uiError === null) return;
+    if (heldFromPreviousKey.current) {
+      // The new key failed: never leave another day's or filter's rows next to its error.
+      heldFromPreviousKey.current = false;
+      dataRef.current = null;
+      setData(null);
+      setSource(null);
+      setUpdatedAt(null);
+      setCacheAge(null);
+    }
+    setError(uiError);
   }, []);
   const finishKeyLoad = useCallback(() => {
     setLoading(false);
@@ -123,7 +137,7 @@ function useRequestOwner<T>(
   return useMemo(() => ({ owns, startLoad, mount, unmount, cancel }), [cancel, mount, owns, startLoad, unmount]);
 }
 
-/** Runs key-driven loads, retaining fulfilled data while the replacement request is pending. */
+/** Runs key-driven loads, retaining fulfilled data while the replacement request is pending and dropping it if that request fails. */
 function useKeyLoad<T>(
   key: string | undefined,
   operations: ReturnType<typeof useResourceState<T>>["operations"],

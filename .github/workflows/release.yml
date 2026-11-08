@@ -3,6 +3,8 @@ name: Release
 
 on:
   workflow_dispatch:
+    # checkov:skip=CKV_GHA_7:Accepted. The tag only reaches checkout `ref` and env vars (never shell interpolation),
+    # must already exist and point at the dispatched main commit, and the run is manual and main-only.
     inputs:
       tag:
         description: Existing version tag to validate and publish

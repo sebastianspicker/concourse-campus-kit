@@ -64,9 +64,11 @@ function combineScheduleSources(
   settledSources: SettledScheduleSource[],
   hasRejectedSource: boolean
 ): FetchPublicScheduleResult {
-  const events = settledSources.flatMap((result, index) =>
+  const all = settledSources.flatMap((result, index) =>
     eventsFromSettledSource(sources[index], result)
   );
+  // One UID in several calendars is one event; clients key rows by id. First source wins.
+  const events = [...new Map(all.reverse().map((event) => [event.id, event])).values()];
   const schedule = retainRelevantEvents(events, SCHEDULE_RESPONSE_MAX_ITEMS).map(toScheduleItem);
   const degraded = hasRejectedSource || settledSources.some((result) => result.status === "rejected");
   return { schedule, degraded };

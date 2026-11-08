@@ -327,4 +327,24 @@ describe("persisted public cache coordination", () => {
       .resolves.toMatchObject({ fromCache: false, data: { events: [{ id: "online" }] } });
     unsubscribe();
   });
+
+  const event = (id: string) => ({ id, title: `Event ${id}`, date: "2026-11-20T18:00:00.000Z", sourceUrl: "https://www.example.org/events" });
+
+  it("keeps a complete saved copy instead of replacing it with a degraded one (P-7)", async () => {
+    const key = getPublicCacheKey("events");
+    await fetchNetworkFirstWithFallback(key, async () => ({ events: [event("complete")], _degraded: false }));
+    await vi.waitFor(async () => expect((await getCacheStats()).keyCount).toBe(1));
+
+    await fetchNetworkFirstWithFallback(key, async () => ({ events: [], _degraded: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    await expect(fetchNetworkFirstWithFallback(key, async () => Promise.reject(new TypeError("offline"))))
+      .resolves.toMatchObject({ fromCache: true, data: { events: [event("complete")] } });
+  });
+
+  it("still saves a degraded response when there is no complete copy (P-7)", async () => {
+    const key = getPublicCacheKey("events");
+    await fetchNetworkFirstWithFallback(key, async () => ({ events: [event("partial")], _degraded: true }));
+    await vi.waitFor(async () => expect((await getCacheStats()).keyCount).toBe(1));
+  });
 });

@@ -136,7 +136,13 @@ async function parseJsonBody<T>(response: Response, signal: AbortSignal): Promis
   }
 
   const text = await abortableResponseRead(response.text(), signal);
-  return text ? JSON.parse(text) as T : {} as T;
+  if (!text) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // A 200 that is not JSON (captive portal, proxy page) is a transient gateway fault, so saved data can be used.
+    throw new ApiErrorException({ message: "Response was not JSON", status: 502, code: "invalid_json", retryAfterInSeconds: undefined });
+  }
 }
 
 /** Races a response-body read against caller cancellation and cleans up its listener. */

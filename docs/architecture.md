@@ -243,8 +243,8 @@ in `packages/contracts/src/http/queries.ts` and parsed by the API.
   loads. `BFF_DEFAULT_CACHE_TTL` controls source-cache lifetime.
 - Degraded event and schedule results are returned and kept in the API source
   cache for at most 60 seconds.
-- Successful data responses, including degraded ones, use private HTTP cache
-  headers and ETags. The API reports degradation in the response body and in
+- Successful data responses use private HTTP cache headers and ETags
+  (`max-age=300`; degraded ones `max-age=0`, so devices revalidate them). The API reports degradation in the response body and in
   `x-data-degraded`.
 - Same-key client loads share transport and persistence. Cancelling one consumer
   detaches only that consumer; the final cancellation aborts the transport. A

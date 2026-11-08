@@ -1,0 +1,8 @@
+---
+exclude_paths:
+  - "CHANGELOG.md"
+  - "**/CHANGELOG.md"
+  - "**/__tests__/**"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "apps/client/e2e-web/**"

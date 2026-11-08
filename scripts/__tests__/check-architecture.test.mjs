@@ -182,3 +182,9 @@ test("permits process.env in runtime config, server and test files", () => {
     "http/listener.test.ts": "export const env = process.env;\n",
   });
 });
+
+test("rejects a CommonJS require of the API from client code (P-9)", () => {
+  withFixture({ sourceFiles: { "apps/client/config/index.js": 'const api = require("@concourse/api");\n' } }, (result) => {
+    assert.match(result.violations.join("\n"), /@concourse\/client must not import @concourse\/api/);
+  });
+});

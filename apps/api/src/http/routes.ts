@@ -106,7 +106,9 @@ export function createJsonRoute<T>(
       const response = schema.parse(data);
 
       const headers = getExtraHeaders?.(response);
-      sendJsonWithCache(req, res, response, { maxAgeSeconds, headers });
+      // Degraded data must be revalidated each time (ETag keeps that cheap), so devices pick up the recovery.
+      const degraded = (response as { _degraded?: boolean })._degraded === true;
+      sendJsonWithCache(req, res, response, { maxAgeSeconds: degraded ? 0 : maxAgeSeconds, headers });
     } catch (err: unknown) {
       handleJsonRouteError(res, requestId, err);
     }

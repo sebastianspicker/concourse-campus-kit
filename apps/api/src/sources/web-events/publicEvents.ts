@@ -358,7 +358,7 @@ function collectHtmlBlocks(
     cursor = opening.end + 1;
     const openingTag = html.slice(opening.start, cursor);
     if (acceptsOpeningTag && !acceptsOpeningTag(openingTag)) continue;
-    const closing = findNextClosingTag(html, tagName, cursor);
+    const closing = findMatchingClosingTag(html, tagName, cursor);
     if (!closing) break;
     const blockEnd = closing.end + 1;
     if (blockEnd - opening.start <= MAX_HTML_BLOCK_LENGTH) {
@@ -386,6 +386,27 @@ function findNextOpeningTag(html: string, tagName: string, from: number): { star
     start = html.indexOf("<", start + 1);
   }
   return null;
+}
+
+/** Skips same-name elements nested inside the block, so `<div class="event"><div>…</div>…</div>` stays whole. */
+function findMatchingClosingTag(html: string, tagName: string, from: number): { start: number; end: number } | null {
+  let cursor = from;
+  let depth = 0;
+  // Reused until passed, so a page without further openings is scanned once, not once per closing tag.
+  let opening = findNextOpeningTag(html, tagName, cursor);
+  for (;;) {
+    const closing = findNextClosingTag(html, tagName, cursor);
+    if (!closing) return null;
+    if (opening && opening.start < cursor) opening = findNextOpeningTag(html, tagName, cursor);
+    if (opening && opening.start < closing.start) {
+      depth += 1;
+      cursor = opening.end + 1;
+      continue;
+    }
+    if (depth === 0) return closing;
+    depth -= 1;
+    cursor = closing.end + 1;
+  }
 }
 
 function findNextClosingTag(html: string, tagName: string, from: number): { start: number; end: number } | null {

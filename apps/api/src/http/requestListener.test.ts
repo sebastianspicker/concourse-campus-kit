@@ -154,6 +154,9 @@ describe("createRequestListener HTTP characterization", () => {
     expect(schedule.headers[PublicResponseHeader.dataDegraded]).toBe("true");
     expect(today.headers[PublicResponseHeader.dataDegraded]).toBe("true");
     expect(rooms.headers[PublicResponseHeader.dataDegraded]).toBeUndefined();
+    // P-5: degraded results must not outlive the BFF's own 60 s degraded cache in device HTTP caches.
+    for (const response of [events, schedule, today]) expect(response.headers["cache-control"]).toBe("private, max-age=0");
+    expect(rooms.headers["cache-control"]).toBe("private, max-age=300");
   });
 
   it.each(["/events", "/rooms", "/schedule", "/today"])("returns the stable no-source 404 for %s", async (path) => {

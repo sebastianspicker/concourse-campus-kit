@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicResponseHeader } from "@concourse/contracts";
-import { ApiErrorException, RequestTimeoutError } from "../errors";
+import { ApiErrorException, isTransientPublicDataFailure, RequestTimeoutError } from "../errors";
 import { fetchJsonResponseWithTimeout, parseBffError } from "../fetchHelpers";
 
 const URL_OK = "https://bff.example/v1/x";
@@ -49,9 +49,12 @@ describe("fetchJsonResponseWithTimeout success", () => {
     expect((await fetchJsonResponseWithTimeout(URL_OK)).data).toEqual({});
   });
 
-  it("rejects malformed success bodies with a SyntaxError", async () => {
-    stubFetch(async () => new Response("{nope", { status: 200 }));
-    expect(await failure(fetchJsonResponseWithTimeout(URL_OK))).toBeInstanceOf(SyntaxError);
+  it("treats a non-JSON success body (captive portal) as a transient bad gateway (P-3)", async () => {
+    stubFetch(async () => new Response("<html>Sign in to Wi-Fi</html>", { status: 200 }));
+    const error = await failure(fetchJsonResponseWithTimeout(URL_OK));
+    expect(error).toBeInstanceOf(ApiErrorException);
+    expect(error).toMatchObject({ status: 502, code: "invalid_json" });
+    expect(isTransientPublicDataFailure(error)).toBe(true);
   });
 });
 

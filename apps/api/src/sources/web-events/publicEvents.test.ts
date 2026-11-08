@@ -176,6 +176,26 @@ describe("fetchPublicEvents", () => {
     })]);
   });
 
+  it("keeps an event tile whose markup nests further divs (P-2)", async () => {
+    fetchTextWithTimeout.mockResolvedValueOnce(`
+      <div class="event">
+        <div class="date"><time datetime="2026-11-20T18:00:00+01:00">20 November</time></div>
+        <h3><a href="/events/concert-night">Concert night</a></h3>
+      </div>
+      <div class="event"><div><div>12.11.2026 19:30</div></div><h3><a href="/events/talk">Evening talk</a></h3></div>
+    `);
+
+    const result = await fetchPublicEvents(institution("generic-nested", "https://www.example.org/events"), OPTIONS);
+
+    expect(result).toEqual({
+      degraded: false,
+      events: [
+        expect.objectContaining({ title: "Evening talk", date: "2026-11-12T18:30:00.000Z" }),
+        expect.objectContaining({ title: "Concert night", date: "2026-11-20T17:00:00.000Z", sourceUrl: "https://www.example.org/events/concert-night" })
+      ]
+    });
+  });
+
   it("never emits placeholder 1970 dates for links without a date", async () => {
     fetchTextWithTimeout.mockResolvedValueOnce(`
       <a href="/about">About the university</a>

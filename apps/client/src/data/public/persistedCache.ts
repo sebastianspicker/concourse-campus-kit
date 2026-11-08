@@ -382,25 +382,23 @@ export function clearPersistedCache(key?: string): Promise<void> {
   publicDataGeneration += 1;
   return enqueueClear(async () => {
     const storage = await getStorage();
+    // Clear the store in use (the in-memory fallback included), then still report that disk data could not be reached.
+    await clearPublicKeys(storage, key);
     if (nativeStorageState === null && isStorageAdapter(AsyncStorage)) {
       throw new Error("Saved data storage is unavailable");
     }
-    if (key !== undefined) {
-      if (!isVersionedPublicLogicalKey(key)) return;
-      await removeMany(storage, [CACHE_STORAGE_NAMESPACE + key, LEGACY_CACHE_STORAGE_NAMESPACE + key]);
-      await storage.removeItem(CACHE_INDEX_STORAGE_KEY).catch(() => undefined);
-      indexByStorage.delete(storage as object);
-      notifyMutation("clear");
-      return;
-    }
-
-    const allKeys = await storage.getAllKeys?.() ?? [];
-    const publicKeys = allKeys.filter(isVersionedPublicStorageKey);
-    await removeMany(storage, publicKeys);
-    await storage.removeItem(CACHE_INDEX_STORAGE_KEY).catch(() => undefined);
-    indexByStorage.delete(storage as object);
-    notifyMutation("clear");
   });
+}
+
+async function clearPublicKeys(storage: StorageLike, key: string | undefined): Promise<void> {
+  if (key !== undefined && !isVersionedPublicLogicalKey(key)) return;
+  const keys = key !== undefined
+    ? [CACHE_STORAGE_NAMESPACE + key, LEGACY_CACHE_STORAGE_NAMESPACE + key]
+    : (await storage.getAllKeys?.() ?? []).filter(isVersionedPublicStorageKey);
+  await removeMany(storage, keys);
+  await storage.removeItem(CACHE_INDEX_STORAGE_KEY).catch(() => undefined);
+  indexByStorage.delete(storage as object);
+  notifyMutation("clear");
 }
 
 export type OfflineFetchResult<T> = {
@@ -409,6 +407,23 @@ export type OfflineFetchResult<T> = {
   isOffline: boolean;
   cacheAge: number | null;
 };
+
+const isDegraded = (value: unknown): boolean =>
+  typeof value === "object" && value !== null && (value as { _degraded?: unknown })._degraded === true;
+
+/** Keeps a complete saved copy (it ages out after 24 h) rather than replacing it with a partial, degraded one. */
+async function persistUnlessDowngrade<T>(
+  key: string,
+  value: T,
+  cached: Promise<CachedEntry<T> | null>,
+  expectedGeneration: number,
+): Promise<void> {
+  if (isDegraded(value)) {
+    const existing = await cached;
+    if (existing && !isDegraded(existing.data)) return;
+  }
+  await setPersistedCacheAtGeneration(key, value, expectedGeneration);
+}
 
 /** Attempts network immediately, using one concurrently started persisted read after transient failure. */
 export async function fetchNetworkFirstWithFallback<T>(
@@ -428,7 +443,7 @@ export async function fetchNetworkFirstWithFallback<T>(
   try {
     const freshData = await network;
     if (expectedGeneration === publicDataGeneration) {
-      void setPersistedCacheAtGeneration(key, freshData, expectedGeneration).catch(() => undefined);
+      void persistUnlessDowngrade(key, freshData, cached, expectedGeneration).catch(() => undefined);
     }
     return { data: freshData, fromCache: false, isOffline: false, cacheAge: null };
   } catch (error: unknown) {

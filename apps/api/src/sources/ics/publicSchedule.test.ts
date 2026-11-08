@@ -74,6 +74,17 @@ describe("fetchPublicSchedule", () => {
     expect(JSON.stringify(log.mock.calls)).not.toContain("reader:secret");
   });
 
+  it("lists an event published in two calendars once (P-4)", async () => {
+    fetchTextWithTimeout.mockResolvedValueOnce(VALID_CALENDAR).mockResolvedValueOnce(VALID_CALENDAR);
+
+    const result = await fetchPublicSchedule(institution("duplicate-uid", [
+      { label: "Department", url: "https://www.example.org/department.ics" },
+      { label: "University", url: "https://www.example.org/university.ics" }
+    ]), OPTIONS);
+
+    expect(result.schedule.map((item) => item.id)).toEqual(["public"]);
+  });
+
   it("keeps the merged schedule of several sources within the wire limit", async () => {
     fetchTextWithTimeout
       .mockResolvedValueOnce(calendar("lectures", 2099, 600))

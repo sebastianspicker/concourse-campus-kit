@@ -31,7 +31,7 @@ function importedSpecifiers(path) {
   const source = readFileSync(path, "utf8");
   const specifiers = new Set();
   const staticImportPattern = /\b(?:import|export)\s+(?:type\s+)?(?:(?!;)[\s\S])*?\s+from\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']/g;
-  const dynamicImportPattern = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
+  const dynamicImportPattern = /\b(?:import|require)\s*\(\s*["']([^"']+)["']\s*\)/g;
   for (const match of source.matchAll(staticImportPattern)) specifiers.add(match[1] ?? match[2]);
   for (const match of source.matchAll(dynamicImportPattern)) specifiers.add(match[1]);
   return [...specifiers];

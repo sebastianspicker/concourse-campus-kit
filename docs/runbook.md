@@ -77,8 +77,9 @@ Leave both unset in production so sources use `auto` mode and the real clock.
 `limit`, or `offset` values return `400 bad_request`. Partial event or
 schedule responses can include `_degraded: true` and `x-data-degraded: true`.
 The API source cache keeps those results for at most 60 seconds, the HTTP
-response stays privately cacheable, and the client may persist validated degraded data
-for bounded offline use. Every response includes `x-request-id`; data responses
+response is sent with `private, max-age=0` so devices revalidate it (other data
+responses use `max-age=300`), and the client may persist validated degraded data
+for bounded offline use, but never over a complete saved copy of the same request. Every response includes `x-request-id`; data responses
 identify their pack with `x-institution-id`.
 
 ## Verification
